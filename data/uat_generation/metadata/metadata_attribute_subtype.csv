@@ -1,0 +1,4 @@
+attribute_subtype_id,attribute_type_id,subtype_name
+SUB_HKID,ATTR_GOV_ID,HKID
+SUB_PASSPORT,ATTR_GOV_ID,Passport
+SUB_DRIVERS_LICENSE,ATTR_GOV_ID,Drivers License

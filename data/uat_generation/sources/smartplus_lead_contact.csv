@@ -1,0 +1,7 @@
+lc_id,lead_id,contact_id,contact_role,is_primary,relationship_start_date,created_date,source_system
+LC001,L001,CP001,Decision Maker,True,2024-01-10,2026-01-25,SmartPlus
+LC002,L001,CP002,Influencer,False,2024-01-10,2026-01-25,SmartPlus
+LC003,L002,CP003,Decision Maker,True,2024-02-05,2026-01-25,SmartPlus
+LC004,L003,CP004,Decision Maker,True,2024-03-01,2026-01-25,SmartPlus
+LC005,L003,CP005,Influencer,False,2024-03-01,2026-01-25,SmartPlus
+LC006,L004,CP001,Influencer,False,2024-05-15,2026-01-25,SmartPlus

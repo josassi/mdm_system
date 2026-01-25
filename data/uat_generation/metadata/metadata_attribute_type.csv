@@ -1,0 +1,11 @@
+attribute_type_id,attribute_name,is_pii,requires_classification
+ATTR_FIRST_NAME,First Name,True,False
+ATTR_LAST_NAME,Last Name,True,False
+ATTR_DOB,Date of Birth,True,False
+ATTR_EMAIL,Email Address,True,False
+ATTR_PHONE,Phone Number,True,False
+ATTR_ADDRESS,Address,True,False
+ATTR_GOV_ID,Government ID,True,True
+ATTR_GOV_ID_TYPE,Government ID Type,False,False
+ATTR_GENDER,Gender,False,False
+ATTR_RELATIONSHIP_TYPE,Relationship Type,False,False

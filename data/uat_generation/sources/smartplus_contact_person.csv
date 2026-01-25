@@ -1,0 +1,6 @@
+contact_id,first_name,last_name,date_of_birth,email,phone,company,job_title,gov_id_number,gov_id_type,created_date,source_system
+CP001,Emily,Chen,1978-05-12,emily.chen@techcorp.com,+852-9111-2222,TechCorp,CFO,X123456(7),HKID,2026-01-25,SmartPlus
+CP002,Michael,Wong,1982-08-20,michael.wong@finserv.com,+852-9222-3333,FinServ,VP Operations,Y234567(8),HKID,2026-01-25,SmartPlus
+CP003,Lisa,Taylor,1985-11-03,lisa.taylor@healthplus.com,+852-9333-4444,HealthPlus,HR Director,Z345678(9),HKID,2026-01-25,SmartPlus
+CP004,David,Kumar,1980-03-15,david.kumar@globaltech.com,+852-9444-5555,GlobalTech,CEO,A456789(0),HKID,2026-01-25,SmartPlus
+CP005,Sarah,Liu,1990-07-28,sarah.liu@smartcorp.com,+852-9555-6666,SmartCorp,Benefits Manager,B567890(1),HKID,2026-01-25,SmartPlus

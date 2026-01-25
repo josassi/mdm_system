@@ -1,0 +1,5 @@
+lead_id,first_name,last_name,date_of_birth,email,phone,address,gov_id_type,gov_id_number,created_date,source_system
+L001,John,Smith,1985-06-15,john.smith@email.com,+852-9123-4567,"Flat 5A, 123 Queen's Road, Central, HK",HKID,A123456(7),2026-01-25,SmartPlus
+L002,Sarah,Lee,1982-03-20,sarah.lee@email.com,+852-9234-5678,"Unit 12B, 456 Nathan Road, Kowloon, HK",HKID,B234567(8),2026-01-25,SmartPlus
+L003,Susan,Martinez,1987-02-18,susan.martinez@email.com,+852-9123-4567,"Flat 8C, 789 Hennessy Road, Wan Chai, HK",HKID,L123456(7),2026-01-25,SmartPlus
+L004,Broker,Agency,,broker@agency.com,+852-9666-6666,"Office Tower, HK",,,2026-01-25,SmartPlus

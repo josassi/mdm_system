@@ -1,0 +1,2 @@
+party_type_relationship_id,from_party_type,to_party_type,relationship_type,binding_strength,is_hierarchical,is_bidirectional,source_system,source_table
+PTR_SMARTPLUS_APP_APPLICANT_SPOUSE,smartplus.application.applicant,smartplus.application.spouse,SPOUSE_OF,STRONG,False,True,SmartPlus,application

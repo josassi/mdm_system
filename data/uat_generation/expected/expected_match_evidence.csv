@@ -1,0 +1,45 @@
+scenario_id,party_id_1,party_id_2,should_match,match_reason,min_confidence_score
+S1.1,L001,QM001,True,"Lead to Quote - Exact name, DOB, email",0.95
+S1.1,QM001,PM001,True,"Exact HKID, name, DOB",0.95
+S1.1,L001,PM001,True,"Lead to Policy - Exact name, DOB, email",0.95
+S1.2,QM002,PM002,True,Sarah Lee - exact HKID,0.95
+S1.2,L002,QM002,True,"Lead to Quote - Primary member exact name, DOB, email",0.95
+S1.2,QM003,PM003,True,David Lee - exact HKID,0.95
+S1.2,QM004,PM004,True,Emma Lee - exact HKID,0.95
+S2.2,QM007,PM005,True,Contract+Member number (guarantees_same_party=TRUE),1.0
+S2.2,QM008,PM006,True,Contract+Member number (guarantees_same_party=TRUE),1.0
+S4.1,QM009,PM009,False,NEGATIVE: Same PII but different clusters - NO match,0.0
+S4.2,QM010,QM011,False,NEGATIVE: Same name but 30-year DOB gap,0.0
+S5.1,QM012,PM010,True,Catherine vs Cathy - fuzzy name but exact HKID,0.95
+S5.2,QM013,PM011,True,Wei Zhang vs Zhang Wei - transposed but exact HKID,0.9
+S7.1,L003,QM014,True,"Lead to Quote - Exact name, DOB, email, HKID",0.95
+S7.1,QM014,PM012,True,Exact HKID match,0.95
+S8.1,QM015,PM013,False,NEGATIVE: No PII for matching,0.0
+S8.2,QM016,QM017,True,Duplicate detection,0.95
+S8.2,QM016,PM014,True,Cross-system,0.95
+S8.2,QM017,PM014,True,Cross-system (dup),0.95
+S9.1,QM018,PM016,True,Member 1 match,0.95
+S9.1,QM019,PM017,True,Member 2 match,0.95
+S9.1,QM020,PM018,True,Member 3 match,0.95
+S9.1,QM021,PM019,True,Member 4 match,0.95
+S9.1,QM022,PM020,True,Member 5 match,0.95
+S9.1,QM023,PM021,True,Member 6 match,0.95
+S9.1,QM024,PM022,True,Member 7 match,0.95
+S9.1,QM025,PM023,True,Member 8 match,0.95
+S9.1,QM026,PM024,True,Member 9 match,0.95
+S9.1,QM027,PM025,True,Member 10 match,0.95
+S9.1,QM028,PM026,True,Member 11 match,0.95
+S9.1,QM029,PM027,True,Member 12 match,0.95
+S9.3,QM030,PM028,True,Unicode: John O'Brien-Smith,0.95
+S9.3,QM031,PM029,True,Unicode: José García,0.95
+S9.3,QM032,PM030,True,Unicode: 明 李,0.95
+S9.3,QM033,PM031,True,Unicode: Hans Müller,0.95
+S10.2,QM034,PM032,False,CRITICAL NEGATIVE: Identical PII but different clusters - MUST NOT MATCH,0.0
+S11.5,QM042,PM034,True,Exact HKID match,0.95
+S11.6,QM043,PM035,True,Composite key: contract|member=1,1.0
+S11.6,QM044,PM036,True,Composite key: contract|member=2,1.0
+S12.1,QM045,PM037,False,BLOCKING: Different HKIDs (C123456(7) vs C999999(9)) - same name/DOB/email suggests data error,0.0
+S12.2,QM046,PM038,True,"Name change detected: Thompson→Chen, but exact HKID/DOB/email match (marriage)",0.9
+S12.3,QM047,QM048,False,BLOCKING: Gender conflict (M vs F) - likely data entry error or different persons,0.0
+S12.4,QM049,PM039,True,Different ID types (HKID vs Passport) but exact name/DOB/email/phone match,0.85
+S12.5,QM050,PM040,True,"DOB typo suspected: 1992-07-15 vs 1992-07-16, but exact HKID/name/email - needs review",0.75

@@ -1,0 +1,59 @@
+scenario_id,scenario_name,expected_master_entity_id,person_identifier,source_party_ids,notes
+S1.1,Perfect Happy Path,ENTITY_001,John Smith - 1985-06-15,"[""L001"", ""QM001"", ""PM001""]",Single master entity
+S1.2,Family Quote,ENTITY_002A,Sarah Lee - 1982-03-20,"[""L002"", ""QM002"", ""PM002""]",Family member
+S1.2,Family Quote,ENTITY_002B,David Lee - 1980-07-10,"[""QM003"", ""PM003""]",Family member
+S1.2,Family Quote,ENTITY_002C,Emma Lee - 2010-11-05,"[""QM004"", ""PM004""]",Family member
+S2.1,Quote Level Link,ENTITY_004,Alice Wong - 1988-04-12,"[""QM005""]",Single quote member
+S2.1,Quote Level Link,ENTITY_005,Bob Wong - 1986-08-25,"[""QM006""]",Single quote member
+S2.2,Membership Number Granularity,ENTITY_007,Michael Chen - 1975-09-08,"[""QM007"", ""PM005""]",Guaranteed match via composite key
+S2.2,Membership Number Granularity,ENTITY_008,Linda Chen - 1977-12-03,"[""QM008"", ""PM006""]",Guaranteed match via composite key
+S3.1,Orphaned Policy,ENTITY_006,Robert Taylor - 1970-05-22,"[""PM007""]",Orphaned policy member
+S3.2,Broken Link,ENTITY_007_BROKEN,Grace Park - 1992-08-14,"[""PM008""]",Policy member with broken upstream link
+S4.1,Same Person No Link,ENTITY_008A,James Wilson - 1985-03-15,"[""QM009""]",Declined quote - single party
+S4.1,Same Person No Link,ENTITY_008B,James Wilson - 1985-03-15,"[""PM009""]",Active policy - single party
+S4.2,Same Name Different Person,ENTITY_009A,John Sr Smith - 1960-05-20,"[""QM010""]",Father
+S4.2,Same Name Different Person,ENTITY_009B,John Jr Smith - 1990-05-20,"[""QM011""]",Son
+S5.1,Name Variations,ENTITY_009,Catherine Smith - 1978-11-10,"[""QM012"", ""PM010""]",Fuzzy name matching - Catherine/Cathy
+S5.2,Name Transposition,ENTITY_010,Wei Zhang - 1982-07-25,"[""QM013"", ""PM011""]",Name transposition match
+S7.1,Multi-Touch Journey,ENTITY_011,Susan Martinez - 1987-02-18,"[""L003"", ""QM014"", ""PM012""]",Multi-touch with declined and accepted quotes
+S8.1,Missing PII,ENTITY_012A,Unknown Person - Quote,"[""QM015""]",No PII - quote member
+S8.1,Missing PII,ENTITY_012B,Unknown Person - Policy,"[""PM013""]",No PII - policy member
+S8.2,Duplicate Members,ENTITY_013,Peter Johnson - 1975-09-14,"[""QM016"", ""QM017"", ""PM014""]",All 3 merge into one entity
+S8.3,Invalid FK,ENTITY_014,Nancy White - 1995-04-08,"[""PM015""]",Policy member with NULL quote_id in application
+S9.1,Large Family,ENTITY_015_1,Member1 LargeFamily - 1980-01-01,"[""QM018"", ""PM016""]",Family member 1
+S9.1,Large Family,ENTITY_015_2,Member2 LargeFamily - 1975-01-01,"[""QM019"", ""PM017""]",Family member 2
+S9.1,Large Family,ENTITY_015_3,Member3 LargeFamily - 1970-01-01,"[""QM020"", ""PM018""]",Family member 3
+S9.1,Large Family,ENTITY_015_4,Member4 LargeFamily - 1965-01-01,"[""QM021"", ""PM019""]",Family member 4
+S9.1,Large Family,ENTITY_015_5,Member5 LargeFamily - 1960-01-01,"[""QM022"", ""PM020""]",Family member 5
+S9.1,Large Family,ENTITY_015_6,Member6 LargeFamily - 1955-01-01,"[""QM023"", ""PM021""]",Family member 6
+S9.1,Large Family,ENTITY_015_7,Member7 LargeFamily - 1950-01-01,"[""QM024"", ""PM022""]",Family member 7
+S9.1,Large Family,ENTITY_015_8,Member8 LargeFamily - 1945-01-01,"[""QM025"", ""PM023""]",Family member 8
+S9.1,Large Family,ENTITY_015_9,Member9 LargeFamily - 1940-01-01,"[""QM026"", ""PM024""]",Family member 9
+S9.1,Large Family,ENTITY_015_10,Member10 LargeFamily - 1935-01-01,"[""QM027"", ""PM025""]",Family member 10
+S9.1,Large Family,ENTITY_015_11,Member11 LargeFamily - 1930-01-01,"[""QM028"", ""PM026""]",Family member 11
+S9.1,Large Family,ENTITY_015_12,Member12 LargeFamily - 1925-01-01,"[""QM029"", ""PM027""]",Family member 12
+S9.3,Special Characters,ENTITY_016,John O'Brien-Smith - 1985-01-01,"[""QM030"", ""PM028""]",Unicode name: John O'Brien-Smith
+S9.3,Special Characters,ENTITY_017,José García - 1990-02-02,"[""QM031"", ""PM029""]",Unicode name: José García
+S9.3,Special Characters,ENTITY_018,明 李 - 1988-03-03,"[""QM032"", ""PM030""]",Unicode name: 明 李
+S9.3,Special Characters,ENTITY_019,Hans Müller - 1992-04-04,"[""QM033"", ""PM031""]",Unicode name: Hans Müller
+S10.2,Cross-Cluster Validation,ENTITY_020A,Tom Brown - 1980-01-01,"[""QM034""]",Declined quote - separate entity
+S10.2,Cross-Cluster Validation,ENTITY_020B,Tom Brown - 1980-01-01,"[""PM032""]",Active policy - separate entity
+S11.1,Conditional Party Types,ENTITY_021A,Mary Johnson - 1985-01-15,"[""QM035""]",Primary/Applicant
+S11.1,Conditional Party Types,ENTITY_021B,Paul Johnson - 1983-04-20,"[""QM036""]",Spouse
+S11.1,Conditional Party Types,ENTITY_021C,Lily Johnson - 2015-08-10,"[""QM037""]",Child/Dependent
+S11.2,Length-Based Routing,ENTITY_022A,Helen Wong - 1990-03-05,"[""QM038""]",Quote member
+S11.2,Length-Based Routing,ENTITY_022B,Helen Wong - 1990-03-05,"[""PM033""]",Policy member
+S11.3,Bidirectional Relationship,ENTITY_023A,Anna Kim - 1988-05-12,"[""QM039""]",Primary member
+S11.3,Bidirectional Relationship,ENTITY_023B,Brian Kim - 1986-09-08,"[""QM040""]",Spouse member
+S11.4,guarantees_same_party=FALSE,ENTITY_024A,Broker Agency,"[""L004""]",Broker lead - not an individual person
+S11.4,guarantees_same_party=FALSE,ENTITY_024B,Daniel Brown - 1992-11-22,"[""QM041""]",Actual insured person
+S11.5,Priority/Quality Conflict,ENTITY_025,Jennifer Lee - 1987-06-15,"[""QM042"", ""PM034""]",Golden record should use Smile data (higher priority/quality)
+S11.6,Composite Key Relationship,ENTITY_026_1,Person1 Composite - 1986-01-01,"[""QM043"", ""PM035""]",Composite key match: member 1
+S11.6,Composite Key Relationship,ENTITY_026_2,Person2 Composite - 1987-01-01,"[""QM044"", ""PM036""]",Composite key match: member 2
+S12.1,HKID Conflict,ENTITY_027A,Michael Chan - 1985-04-15 - HKID:C123456(7),"[""QM045""]",Quote member - potential data quality issue
+S12.1,HKID Conflict,ENTITY_027B,Michael Chan - 1985-04-15 - HKID:C999999(9),"[""PM037""]",Policy member - potential data quality issue
+S12.2,Name Change,ENTITY_028,Emily Thompson/Chen - 1990-08-22,"[""QM046"", ""PM038""]",Name change over time - matched via stable identifiers
+S12.3,Gender Conflict,ENTITY_029A,Alex Morgan - 1988-03-10 - Male,"[""QM047""]",Gender=M - potential data error
+S12.3,Gender Conflict,ENTITY_029B,Alex Morgan - 1988-03-10 - Female,"[""QM048""]",Gender=F - potential data error
+S12.4,Multiple ID Types,ENTITY_030,Kevin Leung - 1983-12-05,"[""QM049"", ""PM039""]",Same person with multiple ID types (HKID + Passport)
+S12.5,DOB Typo,ENTITY_031,Rachel Wong - 1992-07-15/16,"[""QM050"", ""PM040""]",Likely same person with DOB data entry error

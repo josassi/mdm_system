@@ -1,0 +1,13 @@
+party_type_id,party_type
+PT_SMARTPLUS_LEAD,smartplus.lead
+PT_SMARTPLUS_APPLICATION_APPLICANT,smartplus.application.applicant
+PT_SMARTPLUS_APPLICATION_SPOUSE,smartplus.application.spouse
+PT_SMARTPLUS_QUOTE_MEMBER_APPLICANT,smartplus.quote_member.applicant
+PT_SMARTPLUS_QUOTE_MEMBER_SPOUSE,smartplus.quote_member.spouse
+PT_SMARTPLUS_QUOTE_MEMBER_DEPENDENT,smartplus.quote_member.dependent
+PT_SMARTPLUS_QUOTE,smartplus.quote
+PT_SMARTPLUS_CONTACT_PERSON,smartplus.contact_person
+PT_SMILE_POLICY_MEMBER_PRIMARY,smile.policy_member.primary
+PT_SMILE_POLICY_MEMBER_DEPENDENT,smile.policy_member.dependent
+PT_SMILE_POLICY,smile.policy
+PT_SMILE_CLAIM,smile.claim

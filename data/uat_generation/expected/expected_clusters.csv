@@ -1,0 +1,156 @@
+scenario_id,scenario_name,expected_cluster_id,source_table,source_pk_value,notes
+S1.1,Perfect Happy Path,CLUSTER_001,smartplus_lead,L001,Complete sales funnel
+S1.1,Perfect Happy Path,CLUSTER_001,smartplus_quote,Q001,Complete sales funnel
+S1.1,Perfect Happy Path,CLUSTER_001,smartplus_quote_member,QM001,Complete sales funnel
+S1.1,Perfect Happy Path,CLUSTER_001,smartplus_application,A001,Complete sales funnel
+S1.1,Perfect Happy Path,CLUSTER_001,smile_policy,P001,Complete sales funnel
+S1.1,Perfect Happy Path,CLUSTER_001,smile_policy_member,PM001,Complete sales funnel
+S1.2,Family Quote,CLUSTER_002,smartplus_lead,L002,
+S1.2,Family Quote,CLUSTER_002,smartplus_quote,Q002,
+S1.2,Family Quote,CLUSTER_002,smartplus_quote_member,QM002,
+S1.2,Family Quote,CLUSTER_002,smartplus_quote_member,QM003,
+S1.2,Family Quote,CLUSTER_002,smartplus_quote_member,QM004,
+S1.2,Family Quote,CLUSTER_002,smartplus_application,A002,
+S1.2,Family Quote,CLUSTER_002,smile_policy,P002,
+S1.2,Family Quote,CLUSTER_002,smile_policy_member,PM002,
+S1.2,Family Quote,CLUSTER_002,smile_policy_member,PM003,
+S1.2,Family Quote,CLUSTER_002,smile_policy_member,PM004,
+S2.1,Quote Level Link,CLUSTER_003,smartplus_quote,Q003,App→Quote but not to specific member (keeping_granularity_when_used=FALSE)
+S2.1,Quote Level Link,CLUSTER_003,smartplus_quote_member,QM005,App→Quote but not to specific member (keeping_granularity_when_used=FALSE)
+S2.1,Quote Level Link,CLUSTER_003,smartplus_quote_member,QM006,App→Quote but not to specific member (keeping_granularity_when_used=FALSE)
+S2.1,Quote Level Link,CLUSTER_003,smartplus_application,A003,App→Quote but not to specific member (keeping_granularity_when_used=FALSE)
+S2.2,Membership Number Granularity,CLUSTER_004,smartplus_quote_member,QM007,
+S2.2,Membership Number Granularity,CLUSTER_004,smile_policy_member,PM005,
+S2.2,Membership Number Granularity,CLUSTER_004,smartplus_quote_member,QM008,
+S2.2,Membership Number Granularity,CLUSTER_004,smile_policy_member,PM006,
+S2.2,Membership Number Granularity,CLUSTER_004,smartplus_quote,Q004,
+S2.2,Membership Number Granularity,CLUSTER_004,smile_policy,P004,
+S3.1,Orphaned Policy,CLUSTER_005,smile_policy,P005,"Legacy policy, no SmartPlus records"
+S3.1,Orphaned Policy,CLUSTER_005,smile_policy_member,PM007,"Legacy policy, no SmartPlus records"
+S3.2,Broken Link,CLUSTER_006,smartplus_application,A004,App references non-existent Q999
+S3.2,Broken Link,CLUSTER_006,smile_policy,P006,App references non-existent Q999
+S3.2,Broken Link,CLUSTER_006,smile_policy_member,PM008,App references non-existent Q999
+S4.1,Same Person No Link,CLUSTER_007A,smartplus_quote,Q005,Declined quote cluster
+S4.1,Same Person No Link,CLUSTER_007A,smartplus_quote_member,QM009,
+S4.1,Same Person No Link,CLUSTER_007B,smile_policy,P007,Separate policy cluster
+S4.1,Same Person No Link,CLUSTER_007B,smile_policy_member,PM009,
+S4.2,Same Name Different Person,CLUSTER_008,smartplus_quote_member,QM010,
+S4.2,Same Name Different Person,CLUSTER_008,smartplus_quote_member,QM011,
+S4.2,Same Name Different Person,CLUSTER_008,smartplus_quote,Q006,
+S5.1,Name Variations,CLUSTER_009,smartplus_quote,Q007,
+S5.1,Name Variations,CLUSTER_009,smartplus_quote_member,QM012,
+S5.1,Name Variations,CLUSTER_009,smile_policy,P008,
+S5.1,Name Variations,CLUSTER_009,smile_policy_member,PM010,
+S5.2,Name Transposition,CLUSTER_010,smartplus_quote,Q008,
+S5.2,Name Transposition,CLUSTER_010,smartplus_quote_member,QM013,
+S5.2,Name Transposition,CLUSTER_010,smile_policy,P009,
+S5.2,Name Transposition,CLUSTER_010,smile_policy_member,PM011,
+S7.1,Multi-Touch Journey,CLUSTER_011,smartplus_lead,L003,
+S7.1,Multi-Touch Journey,CLUSTER_011,smartplus_quote,Q009,
+S7.1,Multi-Touch Journey,CLUSTER_011,smartplus_quote,Q010,
+S7.1,Multi-Touch Journey,CLUSTER_011,smartplus_quote_member,QM014,
+S7.1,Multi-Touch Journey,CLUSTER_011,smartplus_application,A005,
+S7.1,Multi-Touch Journey,CLUSTER_011,smile_policy,P010,
+S7.1,Multi-Touch Journey,CLUSTER_011,smile_policy_member,PM012,
+S7.1,Multi-Touch Journey,CLUSTER_011,smile_claim,CL001,
+S8.1,Missing PII,CLUSTER_012,smartplus_quote,Q011,Business link exists but no PII
+S8.1,Missing PII,CLUSTER_012,smartplus_quote_member,QM015,Business link exists but no PII
+S8.1,Missing PII,CLUSTER_012,smile_policy,P011,Business link exists but no PII
+S8.1,Missing PII,CLUSTER_012,smile_policy_member,PM013,Business link exists but no PII
+S8.2,Duplicate Members,CLUSTER_013,smartplus_quote,Q012,
+S8.2,Duplicate Members,CLUSTER_013,smartplus_quote_member,QM016,
+S8.2,Duplicate Members,CLUSTER_013,smartplus_quote_member,QM017,
+S8.2,Duplicate Members,CLUSTER_013,smile_policy,P012,
+S8.2,Duplicate Members,CLUSTER_013,smile_policy_member,PM014,
+S8.3,Invalid FK,CLUSTER_014,smartplus_application,A006,NULL quote_id
+S8.3,Invalid FK,CLUSTER_014,smile_policy,P013,NULL quote_id
+S8.3,Invalid FK,CLUSTER_014,smile_policy_member,PM015,NULL quote_id
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM018,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM016,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM019,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM017,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM020,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM018,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM021,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM019,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM022,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM020,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM023,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM021,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM024,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM022,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM025,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM023,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM026,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM024,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM027,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM025,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM028,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM026,
+S9.1,Large Family,CLUSTER_015,smartplus_quote_member,QM029,
+S9.1,Large Family,CLUSTER_015,smile_policy_member,PM027,
+S9.1,Large Family,CLUSTER_015,smartplus_quote,Q013,
+S9.1,Large Family,CLUSTER_015,smile_policy,P014,
+S9.3,Special Characters,CLUSTER_016,smartplus_quote,Q014,
+S9.3,Special Characters,CLUSTER_016,smartplus_quote_member,QM030,
+S9.3,Special Characters,CLUSTER_016,smile_policy,P015,
+S9.3,Special Characters,CLUSTER_016,smile_policy_member,PM028,
+S9.3,Special Characters,CLUSTER_017,smartplus_quote,Q015,
+S9.3,Special Characters,CLUSTER_017,smartplus_quote_member,QM031,
+S9.3,Special Characters,CLUSTER_017,smile_policy,P016,
+S9.3,Special Characters,CLUSTER_017,smile_policy_member,PM029,
+S9.3,Special Characters,CLUSTER_018,smartplus_quote,Q016,
+S9.3,Special Characters,CLUSTER_018,smartplus_quote_member,QM032,
+S9.3,Special Characters,CLUSTER_018,smile_policy,P017,
+S9.3,Special Characters,CLUSTER_018,smile_policy_member,PM030,
+S9.3,Special Characters,CLUSTER_019,smartplus_quote,Q017,
+S9.3,Special Characters,CLUSTER_019,smartplus_quote_member,QM033,
+S9.3,Special Characters,CLUSTER_019,smile_policy,P018,
+S9.3,Special Characters,CLUSTER_019,smile_policy_member,PM031,
+S10.2,Cross-Cluster Validation,CLUSTER_020A,smartplus_quote,Q018,CRITICAL: Declined quote - separate cluster
+S10.2,Cross-Cluster Validation,CLUSTER_020A,smartplus_quote_member,QM034,
+S10.2,Cross-Cluster Validation,CLUSTER_020B,smile_policy,P019,CRITICAL: Separate policy - no link to cluster A
+S10.2,Cross-Cluster Validation,CLUSTER_020B,smile_policy_member,PM032,
+S11.1,Conditional Party Types,CLUSTER_021,smartplus_quote,Q019,"Tests condition_logic: Primary→applicant, Spouse→spouse, Child→dependent"
+S11.1,Conditional Party Types,CLUSTER_021,smartplus_quote_member,QM035,"Tests condition_logic: Primary→applicant, Spouse→spouse, Child→dependent"
+S11.1,Conditional Party Types,CLUSTER_021,smartplus_quote_member,QM036,"Tests condition_logic: Primary→applicant, Spouse→spouse, Child→dependent"
+S11.1,Conditional Party Types,CLUSTER_021,smartplus_quote_member,QM037,"Tests condition_logic: Primary→applicant, Spouse→spouse, Child→dependent"
+S11.2,Length-Based Routing,CLUSTER_022,smartplus_quote,Q020,"Tests: LEN(contract)=8→relationship, LEN(membership)=16→attribute"
+S11.2,Length-Based Routing,CLUSTER_022,smartplus_quote_member,QM038,"Tests: LEN(contract)=8→relationship, LEN(membership)=16→attribute"
+S11.2,Length-Based Routing,CLUSTER_022,smile_policy,P020,"Tests: LEN(contract)=8→relationship, LEN(membership)=16→attribute"
+S11.2,Length-Based Routing,CLUSTER_022,smile_policy_member,PM033,"Tests: LEN(contract)=8→relationship, LEN(membership)=16→attribute"
+S11.3,Bidirectional Relationship,CLUSTER_023,smartplus_quote,Q021,Tests is_bidirectional=TRUE for spouse relationships
+S11.3,Bidirectional Relationship,CLUSTER_023,smartplus_quote_member,QM039,Tests is_bidirectional=TRUE for spouse relationships
+S11.3,Bidirectional Relationship,CLUSTER_023,smartplus_quote_member,QM040,Tests is_bidirectional=TRUE for spouse relationships
+S11.4,guarantees_same_party=FALSE,CLUSTER_024,smartplus_lead,L004,Tests: Quote→Lead link exists but Lead≠QuoteMember (broker scenario)
+S11.4,guarantees_same_party=FALSE,CLUSTER_024,smartplus_quote,Q022,Tests: Quote→Lead link exists but Lead≠QuoteMember (broker scenario)
+S11.4,guarantees_same_party=FALSE,CLUSTER_024,smartplus_quote_member,QM041,Tests: Quote→Lead link exists but Lead≠QuoteMember (broker scenario)
+S11.5,Priority/Quality Conflict,CLUSTER_025,smartplus_quote_member,QM042,"SmartPlus: priority=2, quality=0.75 (lower quality data)"
+S11.5,Priority/Quality Conflict,CLUSTER_025,smile_policy,P021,
+S11.5,Priority/Quality Conflict,CLUSTER_025,smile_policy_member,PM034,"Smile: priority=1, quality=0.95 (higher quality - SHOULD WIN survivorship)"
+S11.6,Composite Key Relationship,CLUSTER_026,smartplus_quote,Q023,Tests: contract_number|member_number composite key matching
+S11.6,Composite Key Relationship,CLUSTER_026,smartplus_quote_member,QM043,Tests: contract_number|member_number composite key matching
+S11.6,Composite Key Relationship,CLUSTER_026,smartplus_quote_member,QM044,Tests: contract_number|member_number composite key matching
+S11.6,Composite Key Relationship,CLUSTER_026,smile_policy,P022,Tests: contract_number|member_number composite key matching
+S11.6,Composite Key Relationship,CLUSTER_026,smile_policy_member,PM035,Tests: contract_number|member_number composite key matching
+S11.6,Composite Key Relationship,CLUSTER_026,smile_policy_member,PM036,Tests: contract_number|member_number composite key matching
+S12.1,HKID Conflict,CLUSTER_026,smartplus_quote,Q024,Conflicting HKID test
+S12.1,HKID Conflict,CLUSTER_026,smartplus_quote_member,QM045,
+S12.1,HKID Conflict,CLUSTER_026,smile_policy,P023,
+S12.1,HKID Conflict,CLUSTER_026,smile_policy_member,PM037,
+S12.2,Name Change,CLUSTER_027,smartplus_quote,Q025,Different last name but same HKID/DOB/email
+S12.2,Name Change,CLUSTER_027,smartplus_quote_member,QM046,Different last name but same HKID/DOB/email
+S12.2,Name Change,CLUSTER_027,smile_policy,P024,Different last name but same HKID/DOB/email
+S12.2,Name Change,CLUSTER_027,smile_policy_member,PM038,Different last name but same HKID/DOB/email
+S12.3,Gender Conflict,CLUSTER_028A,smartplus_quote,Q026,Gender=M
+S12.3,Gender Conflict,CLUSTER_028A,smartplus_quote_member,QM047,
+S12.3,Gender Conflict,CLUSTER_028B,smartplus_quote,Q027,Gender=F
+S12.3,Gender Conflict,CLUSTER_028B,smartplus_quote_member,QM048,
+S12.4,Multiple ID Types,CLUSTER_029,smartplus_quote,Q028,HKID vs Passport for same person
+S12.4,Multiple ID Types,CLUSTER_029,smartplus_quote_member,QM049,HKID vs Passport for same person
+S12.4,Multiple ID Types,CLUSTER_029,smile_policy,P025,HKID vs Passport for same person
+S12.4,Multiple ID Types,CLUSTER_029,smile_policy_member,PM039,HKID vs Passport for same person
+S12.5,DOB Typo,CLUSTER_030,smartplus_quote,Q029,DOB off by 1 day - likely typo
+S12.5,DOB Typo,CLUSTER_030,smartplus_quote_member,QM050,DOB off by 1 day - likely typo
+S12.5,DOB Typo,CLUSTER_030,smile_policy,P026,DOB off by 1 day - likely typo
+S12.5,DOB Typo,CLUSTER_030,smile_policy_member,PM040,DOB off by 1 day - likely typo

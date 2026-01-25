@@ -1,0 +1,2 @@
+claim_id,policy_id,claimant_member_number,claim_date,claim_amount,claim_type,status,created_date,source_system
+CL001,P010,1,2024-12-01,1500.0,Medical,Approved,2026-01-25,Smile

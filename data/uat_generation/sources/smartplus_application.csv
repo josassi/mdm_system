@@ -1,0 +1,7 @@
+app_id,quote_id,application_date,status,contract_number,applicant_first_name,applicant_last_name,applicant_dob,applicant_email,applicant_phone,applicant_gov_id,spouse_first_name,spouse_last_name,spouse_dob,spouse_email,spouse_phone,spouse_gov_id,created_date,source_system
+A001,Q001,2024-01-20,Approved,C001,John,Smith,1985-06-15,john.smith@email.com,+852-9123-4567,A123456(7),,,,,,,2026-01-25,SmartPlus
+A002,Q002,2024-02-10,Approved,C002,Sarah,Lee,1982-03-20,sarah.lee@email.com,+852-9234-5678,B234567(8),David,Lee,1980-07-10,david.lee@email.com,+852-9234-5678,B345678(9),2026-01-25,SmartPlus
+A003,Q003,2024-03-05,Approved,C003,Alice,Wong,1988-04-15,alice.wong@email.com,+852-9345-6789,C123456(7),Bob,Wong,1986-08-22,bob.wong@email.com,+852-9345-6789,C234567(8),2026-01-25,SmartPlus
+A004,Q999,2024-05-01,Approved,C006,Grace,Park,1990-09-25,grace.park@email.com,+852-9456-7890,D123456(7),,,,,,,2026-01-25,SmartPlus
+A005,Q010,2024-10-20,Approved,C011,Susan,Martinez,1987-02-18,susan.martinez@email.com,+852-9567-8901,E123456(7),,,,,,,2026-01-25,SmartPlus
+A006,,2025-01-01,Approved,C014,Unknown,Person,,,,,,,,,,,2026-01-25,SmartPlus
