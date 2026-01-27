@@ -161,6 +161,68 @@ table METADATA_MATCH_RULE {
   is_active boolean [default: true]
 }
 
+table MATCH_BLOCKING {
+  blocking_id uuid [pk]
+  party_id_1 uuid [ref: > SOURCE_PARTY.party_id, not null]
+  party_id_2 uuid [ref: > SOURCE_PARTY.party_id, not null]
+  
+  // Why is this blocked?
+  blocking_reason_code string [not null, note: 'e.g., CONFLICTING_HKID, GENDER_CONFLICT, MANUAL_OVERRIDE']
+  blocking_rule_id uuid [ref: > METADATA_BLOCKING_RULE.blocking_rule_id, note: 'NULL if manual block']
+  
+  // Automatic vs Manual blocking
+  blocking_source string [not null, note: 'AUTOMATIC | MANUAL_STEWARD']
+  steward_user_id uuid [note: 'Populated if blocking_source=MANUAL_STEWARD']
+  
+  // Evidence of conflict
+  conflicting_attribute_subtype_id uuid [ref: > METADATA_ATTRIBUTE_SUBTYPE.attribute_subtype_id, note: 'Which attribute caused the block']
+  conflict_details jsonb [note: 'e.g., {"party1_hkid": "C123456(7)", "party2_hkid": "C999999(9)"}']
+  
+  // Temporal control
+  created_at timestamp [default: `now()`]
+  expires_at timestamp [note: 'Optional: temporary blocks for review']
+  is_active boolean [default: true, note: 'Allow soft delete of blocking rules']
+  
+  // Auditing
+  created_by string
+  notes text [note: 'Steward notes explaining manual blocks']
+  
+  indexes {
+    (party_id_1, party_id_2, blocking_rule_id) [unique, note: 'Prevent duplicate blocking entries']
+    (party_id_1, party_id_2) [note: 'Fast lookup during matching - WHERE is_active=TRUE']
+  }
+  
+  note: 'Prevents two parties from being matched. Checked DURING match evidence generation (before running expensive match rules). Used for both automatic blocking (conflicting IDs) and manual steward overrides.'
+}
+
+table METADATA_BLOCKING_RULE {
+  blocking_rule_id uuid [pk]
+  rule_name string [unique, not null, note: 'e.g., DIFFERENT_HKID_BLOCKS_MATCH, GENDER_CONFLICT']
+  rule_type string [not null, note: 'CONFLICT | TEMPORAL_CONFLICT | CUSTOM']
+  
+  // Which attribute this rule applies to
+  attribute_subtype_id uuid [ref: > METADATA_ATTRIBUTE_SUBTYPE.attribute_subtype_id, note: 'e.g., HKID, Passport, Gender, DOB']
+  
+  // Rule parameters
+  blocking_logic string [not null, note: 'DIFFERENT_VALUES | THRESHOLD_EXCEEDED | CUSTOM_SQL']
+  threshold_value float [note: 'For temporal conflicts (e.g., DOB difference > 365 days)']
+  
+  // Control
+  is_active boolean [default: true]
+  priority int [note: 'Higher priority = checked first']
+  
+  // Context
+  applies_to_same_country boolean [default: true, note: 'For IDs: only block if same issuing country']
+  requires_high_quality_sources boolean [default: false, note: 'Only block if both sources have quality > threshold']
+  source_quality_threshold float [default: 0.8]
+  
+  // Metadata
+  created_at timestamp [default: `now()`]
+  updated_at timestamp
+  
+  note: 'Defines automatic blocking rules that prevent matching. Examples: different HKIDs, gender conflicts, DOB > 1 year difference. Checked during match evidence generation to skip blocked pairs early.'
+}
+
 // =====================================================================
 // 3. MASTER LAYER (GOLD)
 // =====================================================================
