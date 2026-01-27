@@ -626,13 +626,208 @@ SP_Smile_policy_P001,                    SP_SmartPlus_application_A001_applicant
 - ✅ Bridge table support for many-to-many relationships
 
 **5. UAT Data Generation & Verification**
-- ✅ 23 comprehensive UAT scenarios covering edge cases
-- ✅ 135 party records with 100% cluster coverage
-- ✅ 84 person records with 100% master entity coverage
-- ✅ 51 expected master entities (29 multi-party + 22 single-party)
-- ✅ 39 match evidence entries (positive + negative matches)
+- ✅ 28 comprehensive UAT scenarios covering edge cases
+- ✅ 155 party records with 100% cluster coverage
+- ✅ 94 person records with 100% master entity coverage
+- ✅ 58 expected master entities (36 multi-party + 22 single-party)
+- ✅ 44 match evidence entries (38 positive + 6 negative/blocking)
 - ✅ Automated coherence verification script
 - ✅ Validates transitive closure, negative matches, and completeness
+
+**6. Silver Layer - PARTY_CLUSTER**
+- ✅ Graph-based clustering using BFS (Breadth-First Search)
+- ✅ Treats all relationships as bidirectional for clustering
+- ✅ Finds connected components from RELATIONSHIP edges
+- ✅ 142 SOURCE_PARTY → 63 clusters (27 multi-party + 36 singleton)
+- ✅ Largest cluster: 11 parties
+- ✅ 100% coverage verified
+
+---
+
+## Silver/Gold Matching Strategy
+
+### Challenge: Sparse Data in CRM Systems
+
+**Problem:** CRM systems (e.g., SmartPlus) often have **multiple sparse parties** representing the same person:
+- Applicant (name, DOB, phone)
+- Card holder (name, card_number)
+- Contact person (name, email)
+- Cheque issuer (name, address)
+- Reimbursement person (name, bank_account)
+
+Each party has only 2-3 attributes, but **together** they form a complete profile.
+
+**Traditional Approach Problems:**
+- ❌ Ignoring some parties → Lost information
+- ❌ Cross-system comparison only → Miss within-system duplicates
+- ❌ Naïve all-pairs comparison → 142 parties = 10,011 comparisons
+
+### Solution: Two-Phase Blocking Strategy
+
+#### **Phase 1: Within-Cluster Matching (PRIMARY)**
+
+**Key Insight:** Use `cluster_id` as the primary blocking key
+
+**Why This Works:**
+1. ✅ **Business semantics**: Parties linked by contracts (FK relationships) are highly likely to be the same person
+2. ✅ **Scoped comparisons**: O(n²) only within cluster, not across entire dataset
+3. ✅ **Handles sparse data**: Even with minimal PII, business links create natural boundaries
+4. ✅ **Efficient**: Largest cluster = 11 parties = only 55 comparisons
+
+**Algorithm:**
+```
+For each cluster:
+  Get all parties in cluster
+  Compare ALL pairs within cluster (cartesian product)
+  Run match rules even with sparse PII
+  Output: MATCH_EVIDENCE (blocking_keys='CLUSTER')
+```
+
+**Example:**
+```
+Cluster #1 (linked by contract C001):
+├─ Lead L001 (name: John Smith, email: john@email.com)
+├─ Quote Member QM001 (name: John Smith, DOB: 1985-06-15)
+├─ Policy Member PM001 (name: J. Smith, HKID: C123456)
+└─ Claim Claimant CL001 (name: John Smith, phone: +852-9999)
+
+Action: Compare ALL 6 pairs within cluster
+Result: High probability all are same person (linked by contract)
+```
+
+#### **Phase 2: Cross-Cluster Matching (SECONDARY)**
+
+**Purpose:** Find matches across clusters using strong PII blocking keys
+
+**When This Matters:**
+- Person has multiple unlinked contracts (same person, separate clusters)
+- Data quality issues (broken FK links)
+- Cross-system duplicates without business links
+
+**Blocking Keys for Phase 2 (High-Precision Only):**
+- `EXACT_HKID`: Different contracts, same HKID
+- `EXACT_PASSPORT`: Different contracts, same Passport
+- `EXACT_EMAIL`: Different contracts, same Email (if quality is high)
+
+**Important:** Skip pairs already compared in Phase 1 (deduplication)
+
+**Algorithm:**
+```
+For each strong blocking key:
+  Get candidate pairs across ALL parties
+  Skip if pair already in seen_pairs (Phase 1)
+  Skip if same cluster (handled in Phase 1)
+  Run match rules
+  Output: MATCH_EVIDENCE (blocking_keys=key_name)
+```
+
+### Pair Deduplication Strategy
+
+**Problem:** Different blocking keys may generate the same pairs
+
+**Solution:** Global `seen_pairs` set across both phases
+
+**Benefits:**
+- ✅ **Efficiency**: Avoid redundant expensive match rule execution
+- ✅ **Tracking**: Know which blocking key(s) generated each pair
+- ✅ **Statistics**: Measure blocking key effectiveness and overlap
+- ✅ **Clean logic**: Each pair compared exactly once per match rule
+
+**Overhead Analysis:**
+```
+Memory: O(n) set of tuples (party_id_1, party_id_2)
+  - 142 parties, worst case: ~10K pairs = ~160 KB (negligible)
+Time: O(1) set lookup per pair
+  - ~microseconds vs milliseconds for match rules
+  - < 0.1% of total processing time
+```
+
+**Implementation:**
+```python
+seen_pairs = set()  # Global across both phases
+
+# Phase 1: Within-cluster
+for cluster in clusters:
+    for pair in get_all_pairs_in_cluster(cluster):
+        seen_pairs.add(normalize_pair(pair))
+        run_match_rules(pair)
+
+# Phase 2: Cross-cluster
+for blocking_key in ['EXACT_HKID', 'EXACT_PASSPORT']:
+    for pair in get_candidates(blocking_key):
+        if pair in seen_pairs:  # Already compared in Phase 1
+            continue
+        seen_pairs.add(pair)
+        run_match_rules(pair)
+```
+
+### Comparison Metrics
+
+**Without Cluster Blocking (Naïve):**
+```
+142 parties total
+Comparisons: 142 × 141 / 2 = 10,011 pairs
+Even with strong PII keys: thousands of comparisons
+```
+
+**With Two-Phase Cluster Blocking (Recommended):**
+```
+Phase 1: Within-cluster only
+  - 63 clusters
+  - Largest cluster: 11 parties = 55 comparisons
+  - Total Phase 1: ~300-500 comparisons
+
+Phase 2: Cross-cluster (strong PII only)
+  - High-precision keys: HKID, Passport, Email
+  - Maybe 50-100 additional comparisons
+  - Minus duplicates from Phase 1: ~30-80 net new
+
+Total: ~400-600 comparisons (vs 10,011)
+Reduction: 95% fewer comparisons
+```
+
+### Blocking Rules & Conflict Detection
+
+**Automatic Blocking Rules:**
+- **Conflicting HKIDs**: Different valid HKIDs = different persons (S12.1)
+- **Gender Conflict**: Same name/DOB but different gender = block or review (S12.3)
+- **DOB Temporal Conflict**: DOB difference > 1 year = likely different persons
+
+**When Applied:**
+- **DURING** match evidence generation (before running expensive match rules)
+- Checked via `MATCH_BLOCKING` table lookup
+- If blocked → skip pair entirely (no MATCH_EVIDENCE created)
+
+**Use Cases:**
+1. **Automatic blocking**: Rule-based conflict detection (e.g., HKID mismatch)
+2. **Manual blocking**: Steward override ("confirmed different persons")
+3. **Unlinking**: Break existing incorrect links via `PARTY_TO_ENTITY_LINK` (SCD2)
+
+### Architecture: Evidence vs Resolution
+
+**Key Principle:** Match evidence generation ≠ Entity resolution
+
+**Silver Layer (Evidence Gathering):**
+```
+INPUT:  SOURCE_PARTY (142 records)
+        STANDARDIZED_ATTRIBUTE (linked to SOURCE_PARTY)
+        PARTY_CLUSTER (groups SOURCE_PARTY)
+
+PHASE 1 + PHASE 2: Compare SOURCE_PARTY pairs
+OUTPUT: MATCH_EVIDENCE (all evidence from both phases)
+```
+
+**Gold Layer (Entity Resolution):**
+```
+INPUT:  MATCH_EVIDENCE (aggregates all evidence)
+PROCESS: Find connected components (transitive closure)
+OUTPUT: MASTER_ENTITY + PARTY_TO_ENTITY_LINK
+```
+
+**No Consolidation Between Phases:**
+- Both Phase 1 and Phase 2 work at **SOURCE_PARTY level**
+- No intermediate consolidated entities created
+- Consolidation happens **once** in Gold layer after all evidence collected
 
 ---
 
