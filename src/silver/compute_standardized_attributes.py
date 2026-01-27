@@ -189,8 +189,8 @@ def classify_government_id(standardized_value):
     if not standardized_value:
         return None, 0.0
     
-    # HKID Pattern: X######(#) - Letter + 6 digits + (check digit)
-    if re.match(r'^[A-Z]\d{6}\(\d\)$', standardized_value):
+    # HKID Pattern: X######(#) or XX######(#) - 1-2 letters + 6 digits + (check digit)
+    if re.match(r'^[A-Z]{1,2}\d{6}\(\d\)$', standardized_value):
         return 'HKID', 1.0
     
     # Passport patterns (various countries)
