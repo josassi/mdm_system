@@ -138,7 +138,7 @@ table MATCH_EVIDENCE {
   
   confidence_score float [not null]
   created_at timestamp [default: `now()`]
-  
+  blocking_keys string [note: 'keys used for blocking to create this matching evidence']
   indexes {
     (party_id_1, party_id_2, match_rule_id) [unique]
   }

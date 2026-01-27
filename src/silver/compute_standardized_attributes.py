@@ -92,20 +92,33 @@ def normalize_email(value):
 
 
 def normalize_phone(value):
-    """Normalize phone numbers"""
+    """Normalize phone numbers to +CCXXXXXXXXX format"""
     if pd.isna(value) or value == '':
         return None
     
-    # Remove all non-digit characters except + at start
     normalized = str(value).strip()
     
-    # Keep + prefix if exists, remove all other non-digits
-    if normalized.startswith('+'):
-        normalized = '+' + re.sub(r'\D', '', normalized[1:])
-    else:
-        normalized = re.sub(r'\D', '', normalized)
+    # Extract only digits
+    digits = re.sub(r'\D', '', normalized)
     
-    return normalized if normalized else None
+    if not digits:
+        return None
+    
+    # Ensure + prefix and handle Hong Kong default
+    if normalized.startswith('+'):
+        # Already has +, just use cleaned digits
+        normalized = '+' + digits
+    elif digits.startswith('852') and len(digits) == 11:
+        # Hong Kong number without +: 85299998888 -> +85299998888
+        normalized = '+' + digits
+    elif len(digits) == 8:
+        # Assume Hong Kong local format: 91234567 -> +85291234567
+        normalized = '+852' + digits
+    else:
+        # Other format - add + if not present
+        normalized = '+' + digits
+    
+    return normalized
 
 
 def normalize_gov_id(value):
@@ -278,15 +291,18 @@ def create_standardized_attributes(raw_attr_df, metadata_col_df, metadata_type_d
     print("="*70)
     
     # Join raw_attribute with metadata to get attribute_type info
-    # Note: Bronze layer uses pandas index as column_id (integer)
-    # We need to map integer column_id to metadata_column row
-    metadata_col_indexed = metadata_col_df.reset_index()
-    metadata_col_indexed['column_idx'] = metadata_col_indexed.index
+    # Note: Bronze layer stores column_id as pandas index from metadata_column
+    # We need to create a mapping from that original index to attribute_type
     
+    # First, reset index to get the original row numbers as a column
+    metadata_col_with_idx = metadata_col_df.reset_index()
+    metadata_col_with_idx.rename(columns={'index': 'original_idx'}, inplace=True)
+    
+    # Now merge using the original_idx (which matches column_id in raw_attribute)
     raw_with_metadata = raw_attr_df.merge(
-        metadata_col_indexed[['column_idx', 'attribute_type']],
+        metadata_col_with_idx[['original_idx', 'attribute_type']],
         left_on='column_id',
-        right_on='column_idx',
+        right_on='original_idx',
         how='left'
     )
     
@@ -318,6 +334,7 @@ def create_standardized_attributes(raw_attr_df, metadata_col_df, metadata_type_d
         
         # Step 2: Classify (if needed)
         requires_classification = row.get('requires_classification', False)
+        attribute_type_id = row.get('attribute_type_id')
         
         if requires_classification:
             classify_func = get_classification_function(attribute_name)
@@ -327,25 +344,26 @@ def create_standardized_attributes(raw_attr_df, metadata_col_df, metadata_type_d
                 # Track classification stats
                 key = f"{attribute_name}::{subtype_name}"
                 classification_stats[key] = classification_stats.get(key, 0) + 1
+                
+                # Get attribute_subtype_id from metadata
+                subtype_row = metadata_subtype_df[
+                    metadata_subtype_df['subtype_name'] == subtype_name
+                ]
+                
+                if len(subtype_row) == 0:
+                    # Subtype not in metadata - skip for now
+                    continue
+                
+                attribute_subtype_id = subtype_row.iloc[0]['attribute_subtype_id']
             else:
-                # No classifier - use generic subtype
-                subtype_name = f"{attribute_name.upper().replace(' ', '_')}_GENERIC"
-                confidence = 0.5
+                # No classifier - skip (shouldn't happen if requires_classification=True)
+                continue
         else:
-            # No classification needed - use attribute_type as subtype
-            subtype_name = attribute_name.upper().replace(' ', '_')
+            # No classification needed - use attribute_type_id as subtype_id
+            # This is pragmatic: the attribute type IS the subtype for non-classified attributes
+            attribute_subtype_id = attribute_type_id
+            subtype_name = attribute_name
             confidence = 1.0
-        
-        # Get attribute_subtype_id from metadata
-        subtype_row = metadata_subtype_df[
-            metadata_subtype_df['subtype_name'] == subtype_name
-        ]
-        
-        if len(subtype_row) == 0:
-            # Subtype not in metadata - skip (or create dynamically in real system)
-            continue
-        
-        attribute_subtype_id = subtype_row.iloc[0]['attribute_subtype_id']
         
         # Create STANDARDIZED_ATTRIBUTE record
         standardized_records.append({
