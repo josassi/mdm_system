@@ -41,27 +41,31 @@ from collections import defaultdict
 def load_data():
     """Load Silver layer match evidence and blocking data"""
     project_root = Path(__file__).parent.parent.parent
+    bronze_dir = project_root / 'data/bronze'
     silver_dir = project_root / 'data/silver'
     metadata_dir = project_root / 'data/uat_generation/metadata'
     
     print("Loading match evidence and blocking data...")
     
+    source_party = pd.read_csv(bronze_dir / 'source_party.csv')
     match_evidence = pd.read_csv(silver_dir / 'match_evidence.csv')
     match_blocking = pd.read_csv(silver_dir / 'match_blocking.csv')
     standardized_attr = pd.read_csv(silver_dir / 'standardized_attribute.csv')
     blocking_rules = pd.read_csv(metadata_dir / 'metadata_blocking_rule.csv')
     
+    print(f"  ✓ Loaded {len(source_party)} SOURCE_PARTY records")
     print(f"  ✓ Loaded {len(match_evidence)} MATCH_EVIDENCE records")
     print(f"  ✓ Loaded {len(match_blocking)} MATCH_BLOCKING records")
     print(f"  ✓ Loaded {len(standardized_attr)} STANDARDIZED_ATTRIBUTE records")
     print(f"  ✓ Loaded {len(blocking_rules)} METADATA_BLOCKING_RULE records")
     
-    return match_evidence, match_blocking, standardized_attr, blocking_rules
+    return source_party, match_evidence, match_blocking, standardized_attr, blocking_rules
 
 
-def build_candidate_entities(match_evidence_df):
+def build_candidate_entities(match_evidence_df, all_party_ids):
     """
     Build candidate entities from match evidence using graph clustering.
+    Include singleton entities for parties with no match evidence.
     
     Returns: dict of {entity_id: [party_ids]}
     """
@@ -71,6 +75,9 @@ def build_candidate_entities(match_evidence_df):
     
     # Create graph
     G = nx.Graph()
+    
+    # Add all parties as nodes (ensures singletons are included)
+    G.add_nodes_from(all_party_ids)
     
     # Add edges from match evidence
     for _, row in match_evidence_df.iterrows():
@@ -89,7 +96,7 @@ def build_candidate_entities(match_evidence_df):
         else:
             G.add_edge(party1, party2, weight=confidence, rule_id=rule_id)
     
-    # Find connected components
+    # Find connected components (includes isolated nodes as singletons)
     components = list(nx.connected_components(G))
     
     # Create candidate entities
@@ -415,10 +422,14 @@ def main():
     print("="*70)
     
     # Load data
-    match_evidence_df, match_blocking_df, std_attr_df, blocking_rules_df = load_data()
+    source_party_df, match_evidence_df, match_blocking_df, std_attr_df, blocking_rules_df = load_data()
     
-    # Build candidate entities from match evidence graph
-    candidate_entities, entity_graph = build_candidate_entities(match_evidence_df)
+    # Get all party IDs
+    all_party_ids = source_party_df['source_party_id'].unique().tolist()
+    print(f"\n  Total parties to resolve: {len(all_party_ids)}")
+    
+    # Build candidate entities from match evidence graph (includes singletons)
+    candidate_entities, entity_graph = build_candidate_entities(match_evidence_df, all_party_ids)
     
     # Detect and resolve transitive conflicts
     resolved_entities, conflict_stats, new_blocking_records = resolve_entities_with_conflicts(
@@ -429,6 +440,12 @@ def main():
     master_entity_df = generate_master_entities(resolved_entities)
     party_link_df = generate_party_to_entity_links(resolved_entities)
     new_blocking_df = pd.DataFrame(new_blocking_records)
+    
+    print(f"\n  Verification: {len(party_link_df)} party-to-entity links for {len(all_party_ids)} parties")
+    if len(party_link_df) != len(all_party_ids):
+        print(f"  ⚠️  WARNING: Missing {len(all_party_ids) - len(party_link_df)} parties!")
+    else:
+        print(f"  ✅ All parties have entity assignments")
     
     # Export
     export_gold_tables(master_entity_df, party_link_df, new_blocking_df)
