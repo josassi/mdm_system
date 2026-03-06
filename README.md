@@ -150,16 +150,19 @@ REL_POLICY_APPLICATION,    Smile,       policy,        application_id, SmartPlus
 ```csv
 system_table_id,         table_name,    main_party_type_id
 TBL_SMARTPLUS_APPLICATION, application,   PT_SMARTPLUS_APPLICATION_APPLICANT
+TBL_SMARTPLUS_QUOTE_MEMBER, quote_member,  NULL (conditional table)
+TBL_SMARTPLUS_POLICY_MEMBER, policy_member, NULL (conditional table)
 TBL_SMARTPLUS_QUOTE,      quote,         PT_SMARTPLUS_QUOTE (business object)
 TBL_SMILE_POLICY,         policy,        PT_SMILE_POLICY (business object)
 ```
 
-**For Person Tables:** Use the "primary" party type (applicant/primary member)
-**For Business Objects:** Create a dedicated party_type for FK relationship purposes
+**For Column-Subset Tables (Pattern 1):** Use the "primary" party type (applicant)
+**For Conditional Tables (Pattern 2):** Use NULL - each row has ONE party determined by discriminator
+**For Business Objects (Pattern 3):** Create a dedicated party_type for FK relationship purposes
 
 **Benefits:**
-- Pragmatic solution that covers majority of relationships
-- Simple rule: use main_party_type_id for FK lookups
+- NULL value indicates "don't filter by party_type" - all parties in table can create FK relationships
+- Enables all quote/policy members (applicant, spouse, child) to link to their business objects
 - Non-main parties still linked through same-row relationships (form clusters)
 
 ### 6. **Bronze Ingestion Logic**
@@ -708,6 +711,7 @@ Result: High probability all are same person (linked by contract)
 - `EXACT_HKID`: Different contracts, same HKID
 - `EXACT_PASSPORT`: Different contracts, same Passport
 - `EXACT_EMAIL`: Different contracts, same Email (if quality is high)
+- `EXACT_DOB`: Different contracts, same date of birth (combined with name matching)
 
 **Important:** Skip pairs already compared in Phase 1 (deduplication)
 
@@ -889,3 +893,10 @@ Adding relationship_id to METADATA_RELATIONSHIP enables:
 - Debugging and validation of relationship discovery
 - Clear understanding of which metadata rule created each relationship
 - Foundation for relationship quality scoring and confidence metrics
+
+**9. Transitive Conflict Detection is Essential**
+Two parties can have conflicting attributes but still form an entity through intermediaries:
+- Example: A (HKID: X) ↔ B (no HKID) ↔ C (HKID: Y) where X ≠ Y
+- Solution: Check ALL pairs within candidate entities against blocking rules
+- If conflict found: split entity by removing lowest confidence edge
+- Both direct blocking (during matching) and transitive checking (during resolution) are necessary
