@@ -264,6 +264,7 @@ table METADATA_SYSTEM_TABLE {
   system_table_id uuid [pk]
   system_id uuid [ref: > METADATA_SYSTEM.system_id, not null]
   table_name string [not null]
+  main_party_type_id uuid [ref: > METADATA_PARTY_TYPE.party_type_id, note: 'NULL for tables where each row has ONE party (conditional/simple pattern). NOT NULL for tables with MULTIPLE parties per row (column-subset pattern) - identifies which party type should create FK relationships to business objects.']
   
   indexes {
     (system_id, table_name) [unique]

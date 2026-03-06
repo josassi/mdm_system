@@ -143,14 +143,9 @@ class BronzeRelationshipIngestion:
             relationships_found = 0
             
             # Get main_party_type_id for from and to tables
+            # NULL is valid for conditional tables (one party per row)
             from_main_party_type_id = self._get_main_party_type_id(from_system, from_table)
             to_main_party_type_id = self._get_main_party_type_id(to_system, to_table)
-            
-            if from_main_party_type_id is None or to_main_party_type_id is None:
-                print(f"  ⚠ Warning: No main_party_type_id for one or both tables - skipping")
-                print(f"    from_table: {from_table} ({from_main_party_type_id})")
-                print(f"    to_table: {to_table} ({to_main_party_type_id})")
-                continue
             
             # Check if this is a bridge table relationship
             has_bridge = pd.notna(rel_meta.get('bridge_table_id'))
@@ -189,20 +184,22 @@ class BronzeRelationshipIngestion:
                     to_matches = to_df[to_match_filter]
                     
                     for _, to_row in to_matches.iterrows():
-                        # Find SOURCE_PARTY for from_row (filtered by main_party_type_id)
+                        # Find SOURCE_PARTY for from_row
+                        # If main_party_type_id is NULL: table has ONE party per row, don't filter
+                        # If main_party_type_id is NOT NULL: table has MULTIPLE parties per row, filter by main
                         from_party = self._find_source_party(
                             from_system, 
                             from_table, 
                             str(from_row[from_pk]),
-                            party_type_id=from_main_party_type_id
+                            party_type_id=None if pd.isna(from_main_party_type_id) else from_main_party_type_id
                         )
                         
-                        # Find SOURCE_PARTY for to_row (filtered by main_party_type_id)
+                        # Find SOURCE_PARTY for to_row
                         to_party = self._find_source_party(
                             to_system, 
                             to_table, 
                             str(to_row[to_pk]),
-                            party_type_id=to_main_party_type_id
+                            party_type_id=None if pd.isna(to_main_party_type_id) else to_main_party_type_id
                         )
                         
                         if from_party is None or to_party is None:
@@ -239,20 +236,22 @@ class BronzeRelationshipIngestion:
                     to_matches = to_df[to_df[to_column] == fk_value]
                     
                     for _, to_row in to_matches.iterrows():
-                        # Find SOURCE_PARTY for from_row (filtered by main_party_type_id)
+                        # Find SOURCE_PARTY for from_row
+                        # If main_party_type_id is NULL: table has ONE party per row, don't filter
+                        # If main_party_type_id is NOT NULL: table has MULTIPLE parties per row, filter by main
                         from_party = self._find_source_party(
                             from_system, 
                             from_table, 
                             str(from_row[from_pk]),
-                            party_type_id=from_main_party_type_id
+                            party_type_id=None if pd.isna(from_main_party_type_id) else from_main_party_type_id
                         )
                         
-                        # Find SOURCE_PARTY for to_row (filtered by main_party_type_id)
+                        # Find SOURCE_PARTY for to_row
                         to_party = self._find_source_party(
                             to_system, 
                             to_table, 
                             str(to_row[to_pk]),
-                            party_type_id=to_main_party_type_id
+                            party_type_id=None if pd.isna(to_main_party_type_id) else to_main_party_type_id
                         )
                         
                         if from_party is None or to_party is None:

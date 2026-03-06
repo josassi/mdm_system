@@ -114,11 +114,11 @@ def check_blocking_rules(party1_id, party2_id, attrs1, attrs2, blocking_rules_df
         if blocking_logic == 'DIFFERENT_VALUES':
             if value1 != value2:
                 # Special handling for GENDER_CONFLICT - also need matching names
-                if attribute_subtype == 'SUB_GENDER':
-                    fname1 = attrs1.get('SUB_FIRST_NAME')
-                    fname2 = attrs2.get('SUB_FIRST_NAME')
-                    lname1 = attrs1.get('SUB_LAST_NAME')
-                    lname2 = attrs2.get('SUB_LAST_NAME')
+                if attribute_subtype == 'ATTR_GENDER':
+                    fname1 = attrs1.get('ATTR_FIRST_NAME')
+                    fname2 = attrs2.get('ATTR_FIRST_NAME')
+                    lname1 = attrs1.get('ATTR_LAST_NAME')
+                    lname2 = attrs2.get('ATTR_LAST_NAME')
                     
                     if (fname1 and fname2 and fname1 == fname2 and
                         lname1 and lname2 and lname1 == lname2):
@@ -165,24 +165,24 @@ def run_match_rules(party1_id, party2_id, attrs1, attrs2):
         evidence.append(('RULE_EXACT_PASSPORT', 'PASSPORT', passport1, 1.0))
     
     # Rule 3: Exact Email match
-    email1 = attrs1.get('SUB_EMAIL')
-    email2 = attrs2.get('SUB_EMAIL')
+    email1 = attrs1.get('ATTR_EMAIL')
+    email2 = attrs2.get('ATTR_EMAIL')
     if email1 and email2 and email1 == email2:
         evidence.append(('RULE_EXACT_EMAIL', 'EMAIL', email1, 0.95))
     
     # Rule 4: Exact Phone match
-    phone1 = attrs1.get('SUB_PHONE')
-    phone2 = attrs2.get('SUB_PHONE')
+    phone1 = attrs1.get('ATTR_PHONE')
+    phone2 = attrs2.get('ATTR_PHONE')
     if phone1 and phone2 and phone1 == phone2:
         evidence.append(('RULE_EXACT_PHONE', 'PHONE', phone1, 0.9))
     
     # Rule 5: Exact Name + DOB match
-    fname1 = attrs1.get('SUB_FIRST_NAME')
-    fname2 = attrs2.get('SUB_FIRST_NAME')
-    lname1 = attrs1.get('SUB_LAST_NAME')
-    lname2 = attrs2.get('SUB_LAST_NAME')
-    dob1 = attrs1.get('SUB_DOB')
-    dob2 = attrs2.get('SUB_DOB')
+    fname1 = attrs1.get('ATTR_FIRST_NAME')
+    fname2 = attrs2.get('ATTR_FIRST_NAME')
+    lname1 = attrs1.get('ATTR_LAST_NAME')
+    lname2 = attrs2.get('ATTR_LAST_NAME')
+    dob1 = attrs1.get('ATTR_DOB')  # DOB is stored as ATTR_DOB
+    dob2 = attrs2.get('ATTR_DOB')  # DOB is stored as ATTR_DOB
     
     if (fname1 and fname2 and fname1 == fname2 and
         lname1 and lname2 and lname1 == lname2 and
@@ -327,7 +327,8 @@ def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking
     blocking_keys = [
         ('SUB_HKID', 'EXACT_HKID'),
         ('SUB_PASSPORT', 'EXACT_PASSPORT'),
-        ('ATTR_EMAIL', 'EXACT_EMAIL')  # Use ATTR_EMAIL not SUB_EMAIL (generic subtype)
+        ('ATTR_EMAIL', 'EXACT_EMAIL'),  # Use ATTR_EMAIL not SUB_EMAIL (generic subtype)
+        ('ATTR_DOB', 'EXACT_DOB')  # Added for cross-cluster matching on date of birth
     ]
     
     for subtype_id, blocking_key_name in blocking_keys:

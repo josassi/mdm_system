@@ -49,6 +49,6 @@ QM047,Q026,1,Alex,Morgan,1988-03-10,alex.morgan@email.com,+852-9333-3333,Passpor
 QM048,Q027,1,Alex,Morgan,1988-03-10,alex.morgan@email.com,+852-9333-3333,Passport,P1234567,Primary,F,2026-01-25,SmartPlus
 QM049,Q028,1,Kevin,Leung,1983-12-05,kevin.leung@email.com,+852-9444-4444,HKID,E123456(7),Primary,M,2026-01-25,SmartPlus
 QM050,Q029,1,Rachel,Wong,1992-07-15,rachel.wong@email.com,+852-9555-5555,HKID,F123456(7),Primary,F,2026-01-25,SmartPlus
-QM051,Q030,1,Transit,Person,1990-05-15,transit.a@email.com,+852-9888-0001,HKID,TX123456(7),Primary,M,2026-01-25,SmartPlus
-QM052,Q030,2,Transit,Person,1990-05-15,transit.b@email.com,+852-9888-0002,,,Spouse,M,2026-01-25,SmartPlus
-QM053,Q030,3,Transit,Person,1990-05-15,transit.c@email.com,+852-9888-0003,HKID,TY123456(7),Child,M,2026-01-25,SmartPlus
+QM051,Q030,1,Transit,Person,1990-05-15,shared@transit.com,+852-9888-0001,HKID,TX123456(7),Primary,M,2026-01-25,SmartPlus
+QM052,Q031,1,Transit,Person,1990-05-15,shared@transit.com,+852-9888-0002,,,Primary,M,2026-01-25,SmartPlus
+QM053,Q032,1,Transit,Person,1990-05-15,different@transit.com,+852-9888-0003,HKID,TY123456(7),Primary,M,2026-01-25,SmartPlus
