@@ -48,22 +48,25 @@ from collections import defaultdict
 
 
 def load_data():
-    """Load Silver layer data"""
+    """Load Silver layer data and metadata"""
     project_root = Path(__file__).parent.parent.parent
     silver_dir = project_root / 'data/silver'
     bronze_dir = project_root / 'data/bronze'
+    metadata_dir = project_root / 'data/uat_generation/metadata'
     
     print("Loading Silver and Bronze data...")
     
     party_cluster = pd.read_csv(silver_dir / 'party_cluster.csv')
     standardized_attribute = pd.read_csv(silver_dir / 'standardized_attribute.csv')
     source_party = pd.read_csv(bronze_dir / 'source_party.csv')
+    blocking_rules = pd.read_csv(metadata_dir / 'metadata_blocking_rule.csv')
     
     print(f"  ✓ Loaded {len(party_cluster)} PARTY_CLUSTER records")
     print(f"  ✓ Loaded {len(standardized_attribute)} STANDARDIZED_ATTRIBUTE records")
     print(f"  ✓ Loaded {len(source_party)} SOURCE_PARTY records")
+    print(f"  ✓ Loaded {len(blocking_rules)} METADATA_BLOCKING_RULE records")
     
-    return party_cluster, standardized_attribute, source_party
+    return party_cluster, standardized_attribute, source_party, blocking_rules
 
 
 def get_party_attributes(party_id, std_attr_df):
@@ -83,54 +86,62 @@ def get_party_attributes(party_id, std_attr_df):
     return attr_dict
 
 
-def check_blocking_rules(party1_id, party2_id, attrs1, attrs2):
+def check_blocking_rules(party1_id, party2_id, attrs1, attrs2, blocking_rules_df):
     """
-    Check if two parties should be blocked from matching.
+    Check if two parties should be blocked from matching based on metadata rules.
     
-    Returns: (is_blocked, blocking_reason, blocking_details)
+    Returns: (is_blocked, blocking_rule_id, blocking_reason, blocking_details)
     """
     
-    # Rule 1: Conflicting HKIDs
-    hkid1 = attrs1.get('SUB_HKID')
-    hkid2 = attrs2.get('SUB_HKID')
+    # Filter to active rules and sort by priority (higher first)
+    active_rules = blocking_rules_df[blocking_rules_df['is_active'] == True].sort_values('priority', ascending=False)
     
-    if hkid1 and hkid2 and hkid1 != hkid2:
-        # Both have HKIDs and they're different = definitely different people
-        return True, 'CONFLICTING_HKID', {
-            'party1_hkid': hkid1,
-            'party2_hkid': hkid2
-        }
+    for _, rule in active_rules.iterrows():
+        rule_id = rule['blocking_rule_id']
+        rule_name = rule['rule_name']
+        attribute_subtype = rule['attribute_subtype_id']
+        blocking_logic = rule['blocking_logic']
+        
+        # Get attribute values for both parties
+        value1 = attrs1.get(attribute_subtype)
+        value2 = attrs2.get(attribute_subtype)
+        
+        # Skip if either value is null (can't compare)
+        if not value1 or not value2:
+            continue
+        
+        # Apply blocking logic
+        if blocking_logic == 'DIFFERENT_VALUES':
+            if value1 != value2:
+                # Special handling for GENDER_CONFLICT - also need matching names
+                if attribute_subtype == 'SUB_GENDER':
+                    fname1 = attrs1.get('SUB_FIRST_NAME')
+                    fname2 = attrs2.get('SUB_FIRST_NAME')
+                    lname1 = attrs1.get('SUB_LAST_NAME')
+                    lname2 = attrs2.get('SUB_LAST_NAME')
+                    
+                    if (fname1 and fname2 and fname1 == fname2 and
+                        lname1 and lname2 and lname1 == lname2):
+                        return True, rule_id, 'GENDER_CONFLICT', {
+                            'party1_gender': value1,
+                            'party2_gender': value2,
+                            'shared_name': f"{fname1} {lname1}"
+                        }
+                else:
+                    # For HKID, Passport, etc.
+                    return True, rule_id, rule_name.upper().replace('_BLOCKS_MATCH', ''), {
+                        f'party1_{attribute_subtype}': value1,
+                        f'party2_{attribute_subtype}': value2
+                    }
+        
+        elif blocking_logic == 'THRESHOLD_EXCEEDED':
+            # For temporal conflicts (e.g., DOB difference)
+            threshold = rule['threshold_value']
+            # TODO: Implement temporal comparison logic
+            # For now, skip this type
+            continue
     
-    # Rule 2: Conflicting Passports (if both are non-null and different)
-    passport1 = attrs1.get('SUB_PASSPORT')
-    passport2 = attrs2.get('SUB_PASSPORT')
-    
-    if passport1 and passport2 and passport1 != passport2:
-        return True, 'CONFLICTING_PASSPORT', {
-            'party1_passport': passport1,
-            'party2_passport': passport2
-        }
-    
-    # Rule 3: Gender conflict (if names similar but gender different)
-    # This is more nuanced - could be review rather than hard block
-    gender1 = attrs1.get('SUB_GENDER')
-    gender2 = attrs2.get('SUB_GENDER')
-    fname1 = attrs1.get('SUB_FIRST_NAME')
-    fname2 = attrs2.get('SUB_FIRST_NAME')
-    lname1 = attrs1.get('SUB_LAST_NAME')
-    lname2 = attrs2.get('SUB_LAST_NAME')
-    
-    if (gender1 and gender2 and gender1 != gender2 and
-        fname1 and fname2 and fname1 == fname2 and
-        lname1 and lname2 and lname1 == lname2):
-        # Same name but different gender = suspicious, block
-        return True, 'GENDER_CONFLICT', {
-            'party1_gender': gender1,
-            'party2_gender': gender2,
-            'shared_name': f"{fname1} {lname1}"
-        }
-    
-    return False, None, None
+    return False, None, None, None
 
 
 def run_match_rules(party1_id, party2_id, attrs1, attrs2):
@@ -187,7 +198,7 @@ def run_match_rules(party1_id, party2_id, attrs1, attrs2):
     return evidence
 
 
-def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df):
+def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df, blocking_rules_df):
     """
     Phase 1: Generate match evidence within clusters.
     
@@ -234,8 +245,8 @@ def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df):
             attrs2 = get_party_attributes(party2_id, std_attr_df)
             
             # Check blocking rules
-            is_blocked, blocking_reason, blocking_details = check_blocking_rules(
-                party1_id, party2_id, attrs1, attrs2
+            is_blocked, blocking_rule_id, blocking_reason, blocking_details = check_blocking_rules(
+                party1_id, party2_id, attrs1, attrs2, blocking_rules_df
             )
             
             if is_blocked:
@@ -245,9 +256,9 @@ def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df):
                     'party_id_1': party1_id,
                     'party_id_2': party2_id,
                     'blocking_reason_code': blocking_reason,
-                    'blocking_rule_id': f"RULE_{blocking_reason}",
+                    'blocking_rule_id': blocking_rule_id,
                     'blocking_source': 'AUTOMATIC',
-                    'conflicting_attribute_subtype_id': 'SUB_HKID' if 'HKID' in blocking_reason else None,
+                    'conflicting_attribute_subtype_id': list(blocking_details.keys())[0].replace('party1_', '').replace('party2_', '') if blocking_details else None,
                     'conflict_details': str(blocking_details),
                     'created_at': datetime.now().isoformat(),
                     'is_active': True,
@@ -294,7 +305,7 @@ def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df):
     return evidence_records, blocking_records, seen_pairs
 
 
-def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking_records, seen_pairs):
+def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking_records, seen_pairs, blocking_rules_df):
     """
     Phase 2: Generate match evidence across clusters using strong PII blocking keys.
     
@@ -316,7 +327,7 @@ def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking
     blocking_keys = [
         ('SUB_HKID', 'EXACT_HKID'),
         ('SUB_PASSPORT', 'EXACT_PASSPORT'),
-        ('SUB_EMAIL', 'EXACT_EMAIL')
+        ('ATTR_EMAIL', 'EXACT_EMAIL')  # Use ATTR_EMAIL not SUB_EMAIL (generic subtype)
     ]
     
     for subtype_id, blocking_key_name in blocking_keys:
@@ -370,8 +381,8 @@ def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking
                 attrs2 = get_party_attributes(party2_id, std_attr_df)
                 
                 # Check blocking rules
-                is_blocked, blocking_reason, blocking_details = check_blocking_rules(
-                    party1_id, party2_id, attrs1, attrs2
+                is_blocked, blocking_rule_id, blocking_reason, blocking_details = check_blocking_rules(
+                    party1_id, party2_id, attrs1, attrs2, blocking_rules_df
                 )
                 
                 if is_blocked:
@@ -381,9 +392,9 @@ def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking
                         'party_id_1': party1_id,
                         'party_id_2': party2_id,
                         'blocking_reason_code': blocking_reason,
-                        'blocking_rule_id': f"RULE_{blocking_reason}",
+                        'blocking_rule_id': blocking_rule_id,
                         'blocking_source': 'AUTOMATIC',
-                        'conflicting_attribute_subtype_id': 'SUB_HKID' if 'HKID' in blocking_reason else None,
+                        'conflicting_attribute_subtype_id': list(blocking_details.keys())[0].replace('party1_', '').replace('party2_', '') if blocking_details else None,
                         'conflict_details': str(blocking_details),
                         'created_at': datetime.now().isoformat(),
                         'is_active': True,
@@ -457,16 +468,16 @@ def main():
     print("="*70)
     
     # Load data
-    cluster_df, std_attr_df, source_party_df = load_data()
+    cluster_df, std_attr_df, source_party_df, blocking_rules_df = load_data()
     
     # Phase 1: Within-cluster matching
     evidence_records, blocking_records, seen_pairs = generate_phase1_evidence(
-        cluster_df, std_attr_df, source_party_df
+        cluster_df, std_attr_df, source_party_df, blocking_rules_df
     )
     
     # Phase 2: Cross-cluster matching (strong PII)
     evidence_records, blocking_records = generate_phase2_evidence(
-        cluster_df, std_attr_df, evidence_records, blocking_records, seen_pairs
+        cluster_df, std_attr_df, evidence_records, blocking_records, seen_pairs, blocking_rules_df
     )
     
     # Convert to DataFrames
