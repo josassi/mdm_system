@@ -212,6 +212,7 @@ class BronzeRawAttributeIngestion:
             ('SmartPlus', 'lead', 'smartplus_lead.csv'),
             ('SmartPlus', 'application', 'smartplus_application.csv'),
             ('SmartPlus', 'quote_member', 'smartplus_quote_member.csv'),
+            ('SmartPlus', 'contact_person', 'smartplus_contact_person.csv'),
             ('Smile', 'policy_member', 'smile_policy_member.csv'),
         ]
         
