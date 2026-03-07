@@ -7,11 +7,13 @@ import EntityGraph from '../components/EntityGraph'
 import PartyAttributesPanel from '../components/PartyAttributesPanel'
 import EvidencePanel from '../components/EvidencePanel'
 import BlockingPanel from '../components/BlockingPanel'
+import AttributeTable from '../components/AttributeTable'
+import PartyAttributeTable from '../components/PartyAttributeTable'
 
 export default function EntityDetail() {
   const { entityId } = useParams<{ entityId: string }>()
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'graph' | 'evidence' | 'blocking'>('graph')
+  const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'evidence' | 'blocking'>('graph')
 
   const { data: entityDetail, isLoading, error } = useQuery({
     queryKey: ['entity', entityId],
@@ -89,6 +91,22 @@ export default function EntityDetail() {
               Graph
             </button>
             <button
+              onClick={() => setActiveTab('attributes')}
+              className={`btn-secondary ${
+                activeTab === 'attributes' ? 'bg-primary-600 text-white' : ''
+              }`}
+            >
+              Attributes
+            </button>
+            <button
+              onClick={() => setActiveTab('parties')}
+              className={`btn-secondary ${
+                activeTab === 'parties' ? 'bg-primary-600 text-white' : ''
+              }`}
+            >
+              Parties
+            </button>
+            <button
               onClick={() => setActiveTab('evidence')}
               className={`btn-secondary ${
                 activeTab === 'evidence' ? 'bg-primary-600 text-white' : ''
@@ -122,10 +140,19 @@ export default function EntityDetail() {
                   onPartySelect={setSelectedPartyId}
                 />
               )}
+              {activeTab === 'attributes' && (
+                <AttributeTable
+                  parties={entityDetail.parties}
+                />
+              )}
+              {activeTab === 'parties' && (
+                <PartyAttributeTable
+                  parties={entityDetail.parties}
+                />
+              )}
               {activeTab === 'evidence' && (
                 <EvidencePanel
                   evidence={entityDetail.match_evidence}
-                  parties={entityDetail.parties}
                 />
               )}
               {activeTab === 'blocking' && (
