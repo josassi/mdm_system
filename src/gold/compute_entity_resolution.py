@@ -424,12 +424,17 @@ def main():
     # Load data
     source_party_df, match_evidence_df, match_blocking_df, std_attr_df, blocking_rules_df = load_data()
     
-    # Get all party IDs
+    # Get only parties with attributes (exclude business objects)
+    parties_with_attrs = std_attr_df['source_party_id'].unique().tolist()
     all_party_ids = source_party_df['source_party_id'].unique().tolist()
-    print(f"\n  Total parties to resolve: {len(all_party_ids)}")
     
-    # Build candidate entities from match evidence graph (includes singletons)
-    candidate_entities, entity_graph = build_candidate_entities(match_evidence_df, all_party_ids)
+    print(f"\n  Total parties in SOURCE_PARTY: {len(all_party_ids)}")
+    print(f"  Parties with attributes (persons): {len(parties_with_attrs)}")
+    print(f"  Parties without attributes (business objects): {len(all_party_ids) - len(parties_with_attrs)}")
+    print(f"  → Creating entities only for parties with attributes")
+    
+    # Build candidate entities from match evidence graph (only for parties with attributes)
+    candidate_entities, entity_graph = build_candidate_entities(match_evidence_df, parties_with_attrs)
     
     # Detect and resolve transitive conflicts
     resolved_entities, conflict_stats, new_blocking_records = resolve_entities_with_conflicts(
@@ -441,11 +446,11 @@ def main():
     party_link_df = generate_party_to_entity_links(resolved_entities)
     new_blocking_df = pd.DataFrame(new_blocking_records)
     
-    print(f"\n  Verification: {len(party_link_df)} party-to-entity links for {len(all_party_ids)} parties")
-    if len(party_link_df) != len(all_party_ids):
-        print(f"  ⚠️  WARNING: Missing {len(all_party_ids) - len(party_link_df)} parties!")
+    print(f"\n  Verification: {len(party_link_df)} party-to-entity links for {len(parties_with_attrs)} parties with attributes")
+    if len(party_link_df) != len(parties_with_attrs):
+        print(f"  ⚠️  WARNING: Missing {len(parties_with_attrs) - len(party_link_df)} parties!")
     else:
-        print(f"  ✅ All parties have entity assignments")
+        print(f"  ✅ All parties with attributes have entity assignments")
     
     # Export
     export_gold_tables(master_entity_df, party_link_df, new_blocking_df)
