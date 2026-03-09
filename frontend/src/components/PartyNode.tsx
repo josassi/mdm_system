@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { Handle, Position } from 'reactflow'
 import { ShieldExclamationIcon } from '@heroicons/react/24/solid'
+import { useNavigate } from 'react-router-dom'
 import type { Party } from '../types'
 
 interface PartyNodeData {
@@ -12,20 +13,48 @@ interface PartyNodeData {
 
 function PartyNode({ data }: { data: PartyNodeData }) {
   const { party, isSelected, hasConflict, onClick } = data
+  const navigate = useNavigate()
   
   // Filter out metadata/non-matching attributes, then show first 10
   const displayAttrs = party.attributes
     .filter(a => !['ATTR_GOV_ID_TYPE', 'ATTR_RELATIONSHIP_TYPE', 'ATTR_GENDER'].includes(a.attribute_type))
     .slice(0, 10)
+  
+  const handlePartyIdClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigate(`/parties/${party.party_id}`)
+  }
 
   return (
     <div
       onClick={onClick}
-      className={`cursor-pointer transition-all ${
+      className={`cursor-pointer transition-all relative ${
         isSelected ? 'scale-105' : 'hover:scale-102'
       }`}
     >
-      <Handle type="target" position={Position.Left} />
+      {/* Invisible handles at center for all connections */}
+      <Handle 
+        type="source" 
+        position={Position.Bottom}
+        style={{ 
+          background: 'transparent',
+          border: 'none',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+        }}
+      />
+      <Handle 
+        type="target" 
+        position={Position.Top}
+        style={{ 
+          background: 'transparent',
+          border: 'none',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+        }}
+      />
       
       <div
         className={`rounded p-2 shadow min-w-[200px] max-w-[280px] ${
@@ -48,7 +77,11 @@ function PartyNode({ data }: { data: PartyNodeData }) {
           )}
         </div>
         
-        <div className="font-mono text-[10px] text-gray-500 mb-1">
+        <div 
+          className="font-mono text-[10px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer mb-1"
+          onClick={handlePartyIdClick}
+          title="Click to view party details"
+        >
           {party.party_id}
         </div>
         
@@ -66,8 +99,6 @@ function PartyNode({ data }: { data: PartyNodeData }) {
           )}
         </div>
       </div>
-      
-      <Handle type="source" position={Position.Right} />
     </div>
   )
 }

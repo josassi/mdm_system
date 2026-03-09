@@ -20,6 +20,9 @@ export interface Party {
   link_confidence?: string
   resolution_method?: string
   resolution_score?: number
+  in_cluster?: boolean
+  in_entity?: boolean
+  is_focus?: boolean
 }
 
 export interface Attribute {
@@ -62,16 +65,33 @@ export interface Blocking {
 
 export interface Relationship {
   relationship_id: string
+  metadata_relationship_id: string
   from_party_id: string
   to_party_id: string
-  from_matching_value?: string
-  to_matching_value?: string
+  from_matching_value?: string | null
+  to_matching_value?: string | null
+  metadata: {
+    relationship_type: string
+    is_bidirectional: boolean
+    guarantees_same_party: boolean
+    confidence_score: number | null
+  }
 }
 
 export interface EntityDetail {
   entity_id: string
   created_at: string
   updated_at: string
+  parties: Party[]
+  match_evidence: MatchEvidence[]
+  blocking: Blocking[]
+  relationships: Relationship[]
+}
+
+export interface PartyDetail {
+  party_id: string
+  cluster_id: string | null
+  entity_id: string | null
   parties: Party[]
   match_evidence: MatchEvidence[]
   blocking: Blocking[]

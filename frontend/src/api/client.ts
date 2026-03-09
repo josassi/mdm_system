@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Entity, EntityDetail } from '../types'
+import type { Entity, EntityDetail, PartyDetail } from '../types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -21,6 +21,13 @@ export const entityApi = {
 
   searchEntities: async (query: string): Promise<Entity[]> => {
     const { data } = await api.get('/search', { params: { q: query } })
+    return data
+  },
+}
+
+export const partyApi = {
+  getPartyDetail: async (partyId: string): Promise<PartyDetail> => {
+    const { data } = await api.get(`/parties/${partyId}/detail`)
     return data
   },
 }

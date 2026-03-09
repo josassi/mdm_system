@@ -29,6 +29,7 @@ def load_data():
         'standardized_attribute': pd.read_csv(silver_dir / 'standardized_attribute.csv'),
         'match_evidence': pd.read_csv(silver_dir / 'match_evidence.csv'),
         'match_blocking': pd.read_csv(silver_dir / 'match_blocking.csv'),
+        'party_cluster': pd.read_csv(silver_dir / 'party_cluster.csv'),
         'master_entity': pd.read_csv(gold_dir / 'master_entity.csv'),
         'party_to_entity_link': pd.read_csv(gold_dir / 'party_to_entity_link.csv'),
         'metadata_system': pd.read_csv(metadata_dir / 'metadata_system.csv'),
@@ -36,6 +37,7 @@ def load_data():
         'metadata_party_type': pd.read_csv(metadata_dir / 'metadata_party_type.csv'),
         'metadata_column': pd.read_csv(metadata_dir / 'metadata_column.csv'),
         'metadata_blocking_rule': pd.read_csv(metadata_dir / 'metadata_blocking_rule.csv'),
+        'metadata_relationship': pd.read_csv(metadata_dir / 'metadata_relationship.csv'),
     }
     
     return data
@@ -185,6 +187,91 @@ def get_party(party_id):
         return jsonify({'error': 'Party not found'}), 404
     
     return jsonify(party_info)
+
+
+@app.route('/api/parties/<party_id>/detail', methods=['GET'])
+def get_party_detail(party_id):
+    """Get comprehensive party detail including cluster and entity context"""
+    
+    # Check if party exists
+    party = data['source_party'][data['source_party']['source_party_id'] == party_id]
+    if len(party) == 0:
+        return jsonify({'error': 'Party not found'}), 404
+    
+    # Get cluster_id for this party
+    cluster_info = data['party_cluster'][
+        (data['party_cluster']['party_id'] == party_id) &
+        (data['party_cluster']['rec_end_date'].isna())
+    ]
+    
+    cluster_id = None
+    cluster_party_ids = []
+    if len(cluster_info) > 0:
+        cluster_id = cluster_info.iloc[0]['cluster_id']
+        # Get all parties in this cluster
+        cluster_parties = data['party_cluster'][
+            (data['party_cluster']['cluster_id'] == cluster_id) &
+            (data['party_cluster']['rec_end_date'].isna())
+        ]
+        cluster_party_ids = cluster_parties['party_id'].tolist()
+    
+    # Get entity_id for this party
+    entity_link = data['party_to_entity_link'][
+        data['party_to_entity_link']['party_id'] == party_id
+    ]
+    
+    entity_id = None
+    entity_party_ids = []
+    if len(entity_link) > 0:
+        entity_id = entity_link.iloc[0]['master_entity_id']
+        # Get all parties in this entity
+        entity_parties = data['party_to_entity_link'][
+            data['party_to_entity_link']['master_entity_id'] == entity_id
+        ]
+        entity_party_ids = entity_parties['party_id'].tolist()
+    
+    # Get all unique party IDs (union of cluster and entity)
+    all_party_ids = list(set(cluster_party_ids + entity_party_ids))
+    
+    # Get relationships for these parties
+    initial_relationships = get_relationships_for_parties(all_party_ids)
+    
+    # Add any parties that are connected via relationships (even if not in same entity/cluster)
+    relationship_party_ids = set(all_party_ids)
+    for rel in initial_relationships:
+        relationship_party_ids.add(rel['from_party_id'])
+        relationship_party_ids.add(rel['to_party_id'])
+    
+    # Convert back to list
+    all_party_ids = list(relationship_party_ids)
+    
+    # Get party details for all parties (including relationship-connected ones)
+    parties = []
+    for pid in all_party_ids:
+        party_info = get_party_info(pid)
+        if party_info:
+            # Add flags to indicate membership
+            party_info['in_cluster'] = pid in cluster_party_ids
+            party_info['in_entity'] = pid in entity_party_ids
+            party_info['is_focus'] = pid == party_id
+            parties.append(party_info)
+    
+    # Get match evidence and blocking for all parties
+    match_evidence = get_match_evidence_for_parties(all_party_ids)
+    blocking = get_blocking_for_parties(all_party_ids)
+    
+    # Get relationships for all parties (re-fetch with expanded party list)
+    relationships = get_relationships_for_parties(all_party_ids)
+    
+    return jsonify({
+        'party_id': party_id,
+        'cluster_id': cluster_id,
+        'entity_id': entity_id,
+        'parties': parties,
+        'match_evidence': match_evidence,
+        'blocking': blocking,
+        'relationships': relationships
+    })
 
 
 def get_party_info(party_id):
@@ -374,7 +461,7 @@ def get_blocking_for_parties(party_ids):
 
 
 def get_relationships_for_parties(party_ids):
-    """Get all relationships involving the given parties"""
+    """Get all relationships involving the given parties with metadata"""
     relationships_list = []
     
     relationships = data['relationship'][
@@ -383,12 +470,29 @@ def get_relationships_for_parties(party_ids):
     ]
     
     for _, rel in relationships.iterrows():
+        # Get relationship metadata
+        metadata = data['metadata_relationship'][
+            data['metadata_relationship']['relationship_id'] == rel['metadata_relationship_id']
+        ]
+        
+        rel_metadata = {}
+        if len(metadata) > 0:
+            meta_row = metadata.iloc[0]
+            rel_metadata = {
+                'relationship_type': meta_row['relationship_type'],
+                'is_bidirectional': bool(meta_row['is_bidirectional']),
+                'guarantees_same_party': bool(meta_row['guarantees_same_party']),
+                'confidence_score': float(meta_row['confidence_score']) if pd.notna(meta_row['confidence_score']) else None,
+            }
+        
         relationships_list.append({
             'relationship_id': rel['party_relationship_id'],
+            'metadata_relationship_id': rel['metadata_relationship_id'],
             'from_party_id': rel['from_party_id'],
             'to_party_id': rel['to_party_id'],
-            'from_matching_value': rel.get('from_matching_value'),
-            'to_matching_value': rel.get('to_matching_value')
+            'from_matching_value': rel.get('from_matching_value') if pd.notna(rel.get('from_matching_value')) else None,
+            'to_matching_value': rel.get('to_matching_value') if pd.notna(rel.get('to_matching_value')) else None,
+            'metadata': rel_metadata
         })
     
     return relationships_list
