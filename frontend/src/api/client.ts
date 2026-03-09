@@ -32,4 +32,11 @@ export const partyApi = {
   },
 }
 
+export const dashboardApi = {
+  getStats: async (): Promise<any> => {
+    const { data } = await api.get('/dashboard/stats')
+    return data
+  },
+}
+
 export default api

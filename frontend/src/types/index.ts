@@ -9,6 +9,20 @@ export interface Entity {
   resolution_score: number
   created_at: string
   updated_at: string
+  // Analytics from master_entity
+  total_pairs?: number
+  pairs_with_evidence?: number
+  pairs_blocked?: number
+  unique_attributes?: number
+  total_attribute_instances?: number
+  fully_matching_attributes?: number
+  contradicting_attributes?: number
+  non_matching_pairs?: number
+  ok_pairs?: number
+  matching_pairs?: number
+  avg_pair_score?: number
+  min_pair_score?: number
+  max_pair_score?: number
 }
 
 export interface Party {

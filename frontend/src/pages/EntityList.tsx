@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { 
@@ -13,19 +13,31 @@ import {
 import { entityApi } from '../api/client'
 import type { Entity } from '../types'
 
-type SortField = 'entity_id' | 'party_count' | 'match_evidence_count' | 'conflict_count' | 'resolution_score' | 'updated_at'
+type SortField = 'entity_id' | 'party_count' | 'match_evidence_count' | 'conflict_count' | 'resolution_score' | 'updated_at' | 'total_pairs' | 'matching_pairs' | 'ok_pairs' | 'non_matching_pairs' | 'pairs_blocked' | 'unique_attributes' | 'contradicting_attributes' | 'avg_pair_score'
 type SortDirection = 'asc' | 'desc'
 
 export default function EntityList() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterConflicts, setFilterConflicts] = useState<'all' | 'with-conflicts' | 'no-conflicts'>('all')
-  const [sortField, setSortField] = useState<SortField>('entity_id')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [sortField, setSortField] = useState<SortField>(() => {
+    const saved = localStorage.getItem('entityListSortField')
+    return (saved as SortField) || 'entity_id'
+  })
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
+    const saved = localStorage.getItem('entityListSortDirection')
+    return (saved as SortDirection) || 'asc'
+  })
 
   const { data: entities, isLoading, error } = useQuery({
     queryKey: ['entities'],
     queryFn: entityApi.getEntities,
   })
+
+  // Persist sort settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('entityListSortField', sortField)
+    localStorage.setItem('entityListSortDirection', sortDirection)
+  }, [sortField, sortDirection])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -203,15 +215,29 @@ export default function EntityList() {
               <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('party_count')}>
                 Parties <SortIcon field="party_count" />
               </th>
-              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('match_evidence_count')}>
-                Evidence <SortIcon field="match_evidence_count" />
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('total_pairs')}>
+                Total Pairs <SortIcon field="total_pairs" />
               </th>
-              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('conflict_count')}>
-                Conflicts <SortIcon field="conflict_count" />
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('matching_pairs')}>
+                Full Match <SortIcon field="matching_pairs" />
               </th>
-              <th className="w-32">Source Systems</th>
-              <th className="w-20 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('resolution_score')}>
-                Score <SortIcon field="resolution_score" />
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('ok_pairs')}>
+                Partial Match <SortIcon field="ok_pairs" />
+              </th>
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('non_matching_pairs')}>
+                Different <SortIcon field="non_matching_pairs" />
+              </th>
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('pairs_blocked')}>
+                Blocked Pairs <SortIcon field="pairs_blocked" />
+              </th>
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('unique_attributes')}>
+                Unique Attrs <SortIcon field="unique_attributes" />
+              </th>
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('contradicting_attributes')}>
+                Attr Conflicts <SortIcon field="contradicting_attributes" />
+              </th>
+              <th className="w-24 text-center cursor-pointer hover:bg-gray-50" onClick={() => handleSort('avg_pair_score')}>
+                Match Score <SortIcon field="avg_pair_score" />
               </th>
               <th className="w-32 cursor-pointer hover:bg-gray-50" onClick={() => handleSort('updated_at')}>
                 Updated <SortIcon field="updated_at" />
@@ -231,23 +257,44 @@ export default function EntityList() {
                     {entity.party_count}
                   </span>
                 </td>
-                <td className="text-center text-gray-700">{entity.match_evidence_count || '-'}</td>
+                <td className="text-center text-gray-700">{entity.total_pairs ?? '-'}</td>
                 <td className="text-center">
-                  {entity.has_conflicts ? (
-                    <span className="badge badge-danger">
-                      {entity.conflict_count}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
+                  <span className="inline-flex items-center justify-center px-2 py-1 rounded-full font-semibold text-xs bg-green-100 text-green-700">
+                    {entity.matching_pairs ?? 0}
+                  </span>
                 </td>
-                <td className="text-xs text-gray-600">{entity.source_systems.join(', ')}</td>
                 <td className="text-center">
-                  <span className={`font-medium ${
-                    entity.resolution_score >= 0.9 ? 'text-green-600' :
-                    entity.resolution_score >= 0.7 ? 'text-yellow-600' : 'text-red-600'
+                  <span className="inline-flex items-center justify-center px-2 py-1 rounded-full font-semibold text-xs bg-yellow-100 text-yellow-700">
+                    {entity.ok_pairs ?? 0}
+                  </span>
+                </td>
+                <td className="text-center">
+                  <span className="inline-flex items-center justify-center px-2 py-1 rounded-full font-semibold text-xs bg-gray-100 text-gray-700">
+                    {entity.non_matching_pairs ?? 0}
+                  </span>
+                </td>
+                <td className="text-center">
+                  <span className={`inline-flex items-center justify-center px-2 py-1 rounded-full font-semibold text-xs ${
+                    (entity.pairs_blocked ?? 0) > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
                   }`}>
-                    {(entity.resolution_score * 100).toFixed(0)}%
+                    {entity.pairs_blocked ?? 0}
+                  </span>
+                </td>
+                <td className="text-center text-gray-700">{entity.unique_attributes ?? '-'}</td>
+                <td className="text-center">
+                  <span className={`inline-flex items-center justify-center px-2 py-1 rounded-full font-semibold text-xs ${
+                    (entity.contradicting_attributes ?? 0) > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
+                  }`}>
+                    {entity.contradicting_attributes ?? 0}
+                  </span>
+                </td>
+                <td className="text-center">
+                  <span className={`font-semibold ${
+                    (entity.avg_pair_score ?? 0) >= 0.9 ? 'text-green-600' :
+                    (entity.avg_pair_score ?? 0) >= 0.7 ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`}>
+                    {((entity.avg_pair_score ?? 0) * 100).toFixed(0)}%
                   </span>
                 </td>
                 <td className="text-xs text-gray-500">{new Date(entity.updated_at).toLocaleDateString()}</td>

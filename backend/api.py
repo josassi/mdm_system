@@ -120,7 +120,21 @@ def get_entities():
                 'has_conflicts': len(conflicts) > 0,
                 'resolution_score': float(linked_parties['confidence_score'].mean()) if len(linked_parties) > 0 else 0,
                 'created_at': entity['created_at'],
-                'updated_at': entity['updated_at']
+                'updated_at': entity['updated_at'],
+                # Analytics from master_entity
+                'total_pairs': int(entity['total_pairs']) if pd.notna(entity.get('total_pairs')) else 0,
+                'pairs_with_evidence': int(entity['pairs_with_evidence']) if pd.notna(entity.get('pairs_with_evidence')) else 0,
+                'pairs_blocked': int(entity['pairs_blocked']) if pd.notna(entity.get('pairs_blocked')) else 0,
+                'unique_attributes': int(entity['unique_attributes']) if pd.notna(entity.get('unique_attributes')) else 0,
+                'total_attribute_instances': int(entity['total_attribute_instances']) if pd.notna(entity.get('total_attribute_instances')) else 0,
+                'fully_matching_attributes': int(entity['fully_matching_attributes']) if pd.notna(entity.get('fully_matching_attributes')) else 0,
+                'contradicting_attributes': int(entity['contradicting_attributes']) if pd.notna(entity.get('contradicting_attributes')) else 0,
+                'non_matching_pairs': int(entity['non_matching_pairs']) if pd.notna(entity.get('non_matching_pairs')) else 0,
+                'ok_pairs': int(entity['ok_pairs']) if pd.notna(entity.get('ok_pairs')) else 0,
+                'matching_pairs': int(entity['matching_pairs']) if pd.notna(entity.get('matching_pairs')) else 0,
+                'avg_pair_score': float(entity['avg_pair_score']) if pd.notna(entity.get('avg_pair_score')) else 0,
+                'min_pair_score': float(entity['min_pair_score']) if pd.notna(entity.get('min_pair_score')) else 0,
+                'max_pair_score': float(entity['max_pair_score']) if pd.notna(entity.get('max_pair_score')) else 0,
             })
         except Exception as e:
             print(f"Error processing entity {entity_id} at index {idx}: {e}")
@@ -542,6 +556,120 @@ def search_entities():
             })
     
     return jsonify(results[:20])
+
+
+@app.route('/api/dashboard/stats', methods=['GET'])
+def get_dashboard_stats():
+    """Get comprehensive dashboard statistics"""
+    try:
+        # Total counts
+        total_parties = len(data['source_party'])
+        total_entities = len(data['master_entity'])
+        total_systems = len(data['metadata_system'])
+        
+        # Join tables to get attribute types
+        # Convert column_id to string to ensure consistent types
+        raw_attrs = data['raw_attribute'][['raw_attribute_id', 'column_id']].copy()
+        raw_attrs['column_id'] = raw_attrs['column_id'].astype(str)
+        
+        metadata_cols = data['metadata_column'][['column_id', 'attribute_type']].copy()
+        metadata_cols['column_id'] = metadata_cols['column_id'].astype(str)
+        
+        std_attrs_with_type = data['standardized_attribute'].merge(
+            raw_attrs, 
+            on='raw_attribute_id', 
+            how='left'
+        ).merge(
+            metadata_cols, 
+            on='column_id', 
+            how='left'
+        )
+        
+        # Distinct HKID count (count unique ATTR_GOV_ID values)
+        hkid_attrs = std_attrs_with_type[
+            std_attrs_with_type['attribute_type'] == 'ATTR_GOV_ID'
+        ]
+        distinct_hkids = hkid_attrs['standardized_value'].nunique()
+        
+        # Entities by match score distribution
+        entities_df = data['master_entity']
+        score_distribution = {
+            'perfect_match': len(entities_df[entities_df['avg_pair_score'] >= 0.99]),
+            'high_match': len(entities_df[(entities_df['avg_pair_score'] >= 0.8) & (entities_df['avg_pair_score'] < 0.99)]),
+            'medium_match': len(entities_df[(entities_df['avg_pair_score'] >= 0.5) & (entities_df['avg_pair_score'] < 0.8)]),
+            'low_match': len(entities_df[(entities_df['avg_pair_score'] > 0) & (entities_df['avg_pair_score'] < 0.5)]),
+            'no_match': len(entities_df[entities_df['avg_pair_score'] == 0])
+        }
+        
+        # Entity size distribution
+        entity_size_distribution = {
+            'single_party': len(entities_df[entities_df['party_count'] == 1]),
+            'two_parties': len(entities_df[entities_df['party_count'] == 2]),
+            'three_parties': len(entities_df[entities_df['party_count'] == 3]),
+            'four_plus_parties': len(entities_df[entities_df['party_count'] >= 4])
+        }
+        
+        # Conflict statistics
+        total_blocking_pairs = len(data['match_blocking'][data['match_blocking']['is_active'] == True])
+        entities_with_conflicts = len(entities_df[entities_df['pairs_blocked'] > 0])
+        entities_with_contradictions = len(entities_df[entities_df['contradicting_attributes'] > 0])
+        
+        # Match evidence statistics
+        total_match_evidence = len(data['match_evidence'])
+        avg_match_evidence_per_entity = entities_df['pairs_with_evidence'].mean()
+        
+        # Relationship statistics (active relationships have no end date)
+        relationships_df = data['relationship']
+        total_relationships = len(relationships_df[relationships_df['rec_end_date'].isna()])
+        
+        # Attribute statistics
+        total_attributes = len(data['standardized_attribute'])
+        unique_attribute_types = std_attrs_with_type['attribute_type'].nunique()
+        
+        # Quality metrics
+        avg_entity_match_score = entities_df['avg_pair_score'].mean()
+        avg_unique_attrs_per_entity = entities_df['unique_attributes'].mean()
+        avg_contradicting_attrs = entities_df['contradicting_attributes'].mean()
+        
+        # System-level statistics - join source_party with metadata_system_table to get system_id
+        parties_with_system = data['source_party'].merge(
+            data['metadata_system_table'][['system_table_id', 'system_id']], 
+            on='system_table_id', 
+            how='left'
+        )
+        parties_by_system = parties_with_system.groupby('system_id').size().to_dict()
+        
+        return jsonify({
+            'totals': {
+                'total_parties': int(total_parties),
+                'total_entities': int(total_entities),
+                'total_systems': int(total_systems),
+                'distinct_hkids': int(distinct_hkids),
+                'total_relationships': int(total_relationships),
+                'total_attributes': int(total_attributes),
+                'unique_attribute_types': int(unique_attribute_types)
+            },
+            'match_score_distribution': score_distribution,
+            'entity_size_distribution': entity_size_distribution,
+            'conflicts': {
+                'total_blocking_pairs': int(total_blocking_pairs),
+                'entities_with_conflicts': int(entities_with_conflicts),
+                'entities_with_contradictions': int(entities_with_contradictions)
+            },
+            'quality_metrics': {
+                'avg_entity_match_score': float(avg_entity_match_score),
+                'avg_match_evidence_per_entity': float(avg_match_evidence_per_entity),
+                'avg_unique_attrs_per_entity': float(avg_unique_attrs_per_entity),
+                'avg_contradicting_attrs': float(avg_contradicting_attrs),
+                'total_match_evidence': int(total_match_evidence)
+            },
+            'parties_by_system': parties_by_system
+        })
+    except Exception as e:
+        print(f"Error getting dashboard stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

@@ -353,18 +353,161 @@ def resolve_entities_with_conflicts(candidate_entities, entity_graph, std_attr_d
     return resolved_entities, conflict_stats, new_blocking_records
 
 
-def generate_master_entities(resolved_entities):
-    """Generate MASTER_ENTITY table"""
+def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_df, match_blocking_df):
+    """
+    Compute comprehensive analytics for an entity.
+    
+    Metrics:
+    - Attribute coverage: unique attributes, total attribute instances
+    - Attribute quality: fully matching attributes, contradictions
+    - Pair quality: non-matching pairs (<=70%), ok pairs (70-90%), matching pairs (>90%)
+    - Link scores: average pair score based on attribute overlap
+    """
+    analytics = {
+        'total_pairs': 0,
+        'pairs_with_evidence': 0,
+        'pairs_blocked': 0,
+        'unique_attributes': 0,
+        'total_attribute_instances': 0,
+        'fully_matching_attributes': 0,
+        'contradicting_attributes': 0,
+        'non_matching_pairs': 0,  # <=70%
+        'ok_pairs': 0,            # 70-90%
+        'matching_pairs': 0,      # >90%
+        'avg_pair_score': 0.0,
+        'min_pair_score': 1.0,
+        'max_pair_score': 0.0
+    }
+    
+    if len(party_ids) == 1:
+        # Singleton entity - no pairs to analyze
+        party_attrs = std_attr_df[std_attr_df['source_party_id'] == party_ids[0]]
+        analytics['unique_attributes'] = party_attrs['attribute_subtype_id'].nunique()
+        analytics['total_attribute_instances'] = len(party_attrs)
+        return analytics
+    
+    # Get all attributes for all parties in entity (vectorized)
+    entity_attrs = std_attr_df[std_attr_df['source_party_id'].isin(party_ids)]
+    analytics['unique_attributes'] = entity_attrs['attribute_subtype_id'].nunique()
+    analytics['total_attribute_instances'] = len(entity_attrs)
+    
+    # Build attribute map: {party_id: {attr_subtype: value}}
+    party_attr_map = {}
+    for party_id in party_ids:
+        party_attrs = entity_attrs[entity_attrs['source_party_id'] == party_id]
+        party_attr_map[party_id] = {
+            row['attribute_subtype_id']: row['standardized_value']
+            for _, row in party_attrs.iterrows()
+        }
+    
+    # Analyze all pairs
+    pair_scores = []
+    from itertools import combinations
+    
+    for party1_id, party2_id in combinations(party_ids, 2):
+        analytics['total_pairs'] += 1
+        
+        # Check if pair has match evidence
+        evidence = match_evidence_df[
+            (((match_evidence_df['party_id_1'] == party1_id) & (match_evidence_df['party_id_2'] == party2_id)) |
+             ((match_evidence_df['party_id_1'] == party2_id) & (match_evidence_df['party_id_2'] == party1_id)))
+        ]
+        if len(evidence) > 0:
+            analytics['pairs_with_evidence'] += 1
+        
+        # Check if pair is blocked
+        blocking = match_blocking_df[
+            (((match_blocking_df['party_id_1'] == party1_id) & (match_blocking_df['party_id_2'] == party2_id)) |
+             ((match_blocking_df['party_id_1'] == party2_id) & (match_blocking_df['party_id_2'] == party1_id))) &
+            (match_blocking_df['is_active'] == True)
+        ]
+        if len(blocking) > 0:
+            analytics['pairs_blocked'] += 1
+        
+        # Compute attribute-level match score
+        attrs1 = party_attr_map.get(party1_id, {})
+        attrs2 = party_attr_map.get(party2_id, {})
+        
+        # Common attributes (both parties have)
+        common_attrs = set(attrs1.keys()) & set(attrs2.keys())
+        
+        if len(common_attrs) > 0:
+            matching = sum(1 for attr in common_attrs if attrs1[attr] == attrs2[attr])
+            contradicting = sum(1 for attr in common_attrs if attrs1[attr] != attrs2[attr])
+            
+            pair_score = matching / len(common_attrs)
+            pair_scores.append(pair_score)
+            
+            # Categorize pair quality
+            if pair_score <= 0.70:
+                analytics['non_matching_pairs'] += 1
+            elif pair_score <= 0.90:
+                analytics['ok_pairs'] += 1
+            else:
+                analytics['matching_pairs'] += 1
+    
+    # Compute aggregate pair scores
+    if pair_scores:
+        analytics['avg_pair_score'] = sum(pair_scores) / len(pair_scores)
+        analytics['min_pair_score'] = min(pair_scores)
+        analytics['max_pair_score'] = max(pair_scores)
+    
+    # Compute attribute-level metrics across all parties
+    # For each attribute type, check if all parties agree
+    attribute_stats = defaultdict(lambda: {'values': set(), 'count': 0})
+    
+    for party_id in party_ids:
+        attrs = party_attr_map.get(party_id, {})
+        for attr_type, value in attrs.items():
+            attribute_stats[attr_type]['values'].add(value)
+            attribute_stats[attr_type]['count'] += 1
+    
+    # Count fully matching vs contradicting attributes
+    for attr_type, stats in attribute_stats.items():
+        if len(stats['values']) == 1:
+            # All parties agree on this attribute
+            analytics['fully_matching_attributes'] += 1
+        elif len(stats['values']) > 1:
+            # Contradiction - different values for same attribute type
+            analytics['contradicting_attributes'] += 1
+    
+    return analytics
+
+
+def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, match_blocking_df):
+    """Generate MASTER_ENTITY table with comprehensive analytics"""
     master_entities = []
     
+    print("\nComputing entity analytics...")
+    
     for entity_id, party_ids in resolved_entities.items():
+        # Compute analytics for this entity
+        analytics = compute_entity_analytics(
+            entity_id, party_ids, std_attr_df, match_evidence_df, match_blocking_df
+        )
+        
         master_entities.append({
             'master_entity_id': entity_id,
             'party_count': len(party_ids),
+            'total_pairs': analytics['total_pairs'],
+            'pairs_with_evidence': analytics['pairs_with_evidence'],
+            'pairs_blocked': analytics['pairs_blocked'],
+            'unique_attributes': analytics['unique_attributes'],
+            'total_attribute_instances': analytics['total_attribute_instances'],
+            'fully_matching_attributes': analytics['fully_matching_attributes'],
+            'contradicting_attributes': analytics['contradicting_attributes'],
+            'non_matching_pairs': analytics['non_matching_pairs'],
+            'ok_pairs': analytics['ok_pairs'],
+            'matching_pairs': analytics['matching_pairs'],
+            'avg_pair_score': round(analytics['avg_pair_score'], 4),
+            'min_pair_score': round(analytics['min_pair_score'], 4),
+            'max_pair_score': round(analytics['max_pair_score'], 4),
             'created_at': datetime.now().isoformat(),
             'updated_at': datetime.now().isoformat(),
             'is_active': True
         })
+    
+    print(f"  ✓ Computed analytics for {len(master_entities)} entities")
     
     return pd.DataFrame(master_entities)
 
@@ -441,8 +584,10 @@ def main():
         candidate_entities, entity_graph, std_attr_df, blocking_rules_df, match_blocking_df
     )
     
-    # Generate Gold layer tables
-    master_entity_df = generate_master_entities(resolved_entities)
+    # Generate Gold layer tables with analytics
+    master_entity_df = generate_master_entities(
+        resolved_entities, std_attr_df, match_evidence_df, match_blocking_df
+    )
     party_link_df = generate_party_to_entity_links(resolved_entities)
     new_blocking_df = pd.DataFrame(new_blocking_records)
     

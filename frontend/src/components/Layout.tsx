@@ -1,12 +1,31 @@
 import { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { CubeIcon } from '@heroicons/react/24/outline'
+import { Link, useLocation } from 'react-router-dom'
+import { CubeIcon, ChartBarIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline'
 
 interface LayoutProps {
   children: ReactNode
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const location = useLocation()
+  
+  const NavLink = ({ to, icon: Icon, children }: { to: string; icon: any; children: ReactNode }) => {
+    const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to))
+    return (
+      <Link 
+        to={to} 
+        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+          isActive 
+            ? 'bg-primary-100 text-primary-700' 
+            : 'text-gray-700 hover:text-primary-600 hover:bg-gray-100'
+        }`}
+      >
+        <Icon className="h-5 w-5" />
+        <span>{children}</span>
+      </Link>
+    )
+  }
+  
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-white border-b border-gray-200">
@@ -20,13 +39,13 @@ export default function Layout({ children }: LayoutProps) {
               </div>
             </Link>
             
-            <nav className="flex items-center space-x-4">
-              <Link 
-                to="/" 
-                className="text-gray-700 hover:text-primary-600 px-3 py-2 rounded-md text-sm font-medium"
-              >
+            <nav className="flex items-center space-x-2">
+              <NavLink to="/" icon={ChartBarIcon}>
+                Dashboard
+              </NavLink>
+              <NavLink to="/entities" icon={BuildingOfficeIcon}>
                 Entities
-              </Link>
+              </NavLink>
             </nav>
           </div>
         </div>
