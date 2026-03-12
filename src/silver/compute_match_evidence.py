@@ -1,12 +1,13 @@
 """
-MATCH_EVIDENCE Computation - Silver Layer
+MATCH_EVIDENCE & DIFFERENCE_EVIDENCE Computation - Silver Layer
 
-Implements two-phase matching strategy:
-1. Phase 1: Within-cluster blocking (PRIMARY) - compare all pairs in same cluster
-2. Phase 2: Cross-cluster blocking (SECONDARY) - strong PII keys across clusters
+Implements evidence-based scoring with two-phase strategy:
+1. Phase 1: Within-cluster comparison - compare all pairs in same cluster
+2. Phase 2: Cross-cluster comparison - strong PII keys across clusters
 
-Also implements MATCH_BLOCKING rules to prevent merges when conflicts exist
-(e.g., two parties with different valid HKIDs cannot be the same person).
+Generates two types of evidence:
+- MATCH_EVIDENCE: Attributes that match (with confidence scores)
+- DIFFERENCE_EVIDENCE: Attributes that differ (with severity scores)
 
 Algorithm:
 Phase 1 - Within Cluster:
@@ -14,29 +15,27 @@ Phase 1 - Within Cluster:
     Get all parties in cluster
     Generate all pairs (cartesian product)
     For each pair:
-      Check if pair is blocked (MATCH_BLOCKING rules)
-      If not blocked:
-        Run match rules
-        Generate MATCH_EVIDENCE if confidence > threshold
-      If blocked:
-        Record in MATCH_BLOCKING table
+      Check for hard blocks (severity=1.0) FIRST
+      If hard block found:
+        Generate DIFFERENCE_EVIDENCE for blocking attribute
+        Set evaluation_complete=False
+        SKIP remaining attributes (early exit)
+      Else:
+        Compare ALL attributes
+        Generate MATCH_EVIDENCE for matches
+        Generate DIFFERENCE_EVIDENCE for differences
+        Set evaluation_complete=True
 
-Phase 2 - Cross Cluster (future):
-  For each strong PII blocking key (HKID, Passport, Email):
+Phase 2 - Cross Cluster:
+  For each strong PII blocking key (HKID, Passport, Email, DOB):
     Get candidate pairs across clusters
     Skip if already compared in Phase 1
-    Apply same matching logic
+    Apply same evidence collection logic
 
-Match Rules:
-- Exact HKID match (deterministic, confidence=1.0)
-- Exact Passport match (deterministic, confidence=1.0)
-- Exact email match (deterministic, confidence=0.95)
-- Exact phone match (deterministic, confidence=0.9)
-- Fuzzy name + DOB match (probabilistic, confidence varies)
-
-Blocking Rules:
-- Conflicting HKIDs: Different valid HKIDs = block
-- Gender conflict: Same name/DOB but different gender = block or review
+Evidence Rules (from metadata_evidence_rule.csv):
+- Hard links (confidence=1.0): HKID, Passport, Gov ID
+- Hard blocks (severity=1.0): Conflicting HKID, Passport, Gov ID
+- Soft evidence (0.0-0.9): Email, phone, name, DOB, gender, address
 """
 
 import pandas as pd
@@ -58,15 +57,19 @@ def load_data():
     
     party_cluster = pd.read_csv(silver_dir / 'party_cluster.csv')
     standardized_attribute = pd.read_csv(silver_dir / 'standardized_attribute.csv')
+    raw_attribute = pd.read_csv(bronze_dir / 'raw_attribute.csv')
     source_party = pd.read_csv(bronze_dir / 'source_party.csv')
-    blocking_rules = pd.read_csv(metadata_dir / 'metadata_blocking_rule.csv')
+    evidence_rules = pd.read_csv(metadata_dir / 'metadata_evidence_rule.csv')
+    metadata_column = pd.read_csv(metadata_dir / 'metadata_column.csv')
     
     print(f"  ✓ Loaded {len(party_cluster)} PARTY_CLUSTER records")
     print(f"  ✓ Loaded {len(standardized_attribute)} STANDARDIZED_ATTRIBUTE records")
+    print(f"  ✓ Loaded {len(raw_attribute)} RAW_ATTRIBUTE records")
     print(f"  ✓ Loaded {len(source_party)} SOURCE_PARTY records")
-    print(f"  ✓ Loaded {len(blocking_rules)} METADATA_BLOCKING_RULE records")
+    print(f"  ✓ Loaded {len(evidence_rules)} METADATA_EVIDENCE_RULE records")
+    print(f"  ✓ Loaded {len(metadata_column)} METADATA_COLUMN records")
     
-    return party_cluster, standardized_attribute, source_party, blocking_rules
+    return party_cluster, standardized_attribute, raw_attribute, source_party, evidence_rules, metadata_column
 
 
 def get_party_attributes(party_id, std_attr_df):
@@ -86,130 +89,125 @@ def get_party_attributes(party_id, std_attr_df):
     return attr_dict
 
 
-def check_blocking_rules(party1_id, party2_id, attrs1, attrs2, blocking_rules_df):
+def collect_pair_evidence(party1_id, party2_id, attrs1, attrs2, std_attr_df, raw_attr_df, 
+                          evidence_rules_df, metadata_column_df):
     """
-    Check if two parties should be blocked from matching based on metadata rules.
+    Collect all evidence (matches and differences) for a pair of parties.
+    Implements early exit for hard blocks (severity=1.0).
     
-    Returns: (is_blocked, blocking_rule_id, blocking_reason, blocking_details)
+    Returns: (match_evidences, difference_evidences, evaluation_complete)
     """
+    match_evidences = []
+    difference_evidences = []
+    evaluation_complete = True
     
-    # Filter to active rules and sort by priority (higher first)
-    active_rules = blocking_rules_df[blocking_rules_df['is_active'] == True].sort_values('priority', ascending=False)
+    # Get all unique attributes present for either party
+    all_attributes = set(attrs1.keys()) | set(attrs2.keys())
     
-    for _, rule in active_rules.iterrows():
-        rule_id = rule['blocking_rule_id']
-        rule_name = rule['rule_name']
-        attribute_subtype = rule['attribute_subtype_id']
-        blocking_logic = rule['blocking_logic']
+    # Get evidence rules and sort by priority (check hard blocks first)
+    active_rules = evidence_rules_df[evidence_rules_df['is_active'] == True].sort_values(
+        'priority', ascending=False
+    )
+    
+    # Create attribute lookup for evidence rules
+    rules_by_attr = {row['attribute_subtype_id']: row for _, row in active_rules.iterrows()}
+    
+    # STEP 1: Check for hard blocks first (early exit optimization)
+    for attribute_subtype in all_attributes:
+        if attribute_subtype not in rules_by_attr:
+            continue
         
-        # Get attribute values for both parties
+        rule = rules_by_attr[attribute_subtype]
+        hard_block_threshold = rule.get('hard_block_threshold')
+        
+        # Skip if not a potential hard block
+        if pd.isna(hard_block_threshold) or hard_block_threshold != 1.0:
+            continue
+        
         value1 = attrs1.get(attribute_subtype)
         value2 = attrs2.get(attribute_subtype)
         
-        # Skip if either value is null (can't compare)
-        if not value1 or not value2:
+        # Both values must exist to be a hard block
+        if value1 and value2 and value1 != value2:
+            # HARD BLOCK FOUND - create difference evidence and exit
+            difference_evidences.append({
+                'evidence_id': str(uuid.uuid4()),
+                'party_id_1': party1_id,
+                'party_id_2': party2_id,
+                'attribute_subtype_id': attribute_subtype,
+                'value_1': value1,
+                'value_2': value2,
+                'severity_score': 1.0,
+                'is_hard_block': True,
+                'difference_type': 'HARD_CONFLICT',
+                'created_at': datetime.now().isoformat()
+            })
+            evaluation_complete = False
+            return match_evidences, difference_evidences, evaluation_complete
+    
+    # STEP 2: No hard blocks - evaluate all attributes fully
+    for attribute_subtype in all_attributes:
+        if attribute_subtype not in rules_by_attr:
             continue
         
-        # Apply blocking logic
-        if blocking_logic == 'DIFFERENT_VALUES':
-            if value1 != value2:
-                # Special handling for GENDER_CONFLICT - also need matching names
-                if attribute_subtype == 'ATTR_GENDER':
-                    fname1 = attrs1.get('ATTR_FIRST_NAME')
-                    fname2 = attrs2.get('ATTR_FIRST_NAME')
-                    lname1 = attrs1.get('ATTR_LAST_NAME')
-                    lname2 = attrs2.get('ATTR_LAST_NAME')
-                    
-                    if (fname1 and fname2 and fname1 == fname2 and
-                        lname1 and lname2 and lname1 == lname2):
-                        return True, rule_id, 'GENDER_CONFLICT', {
-                            'party1_gender': value1,
-                            'party2_gender': value2,
-                            'shared_name': f"{fname1} {lname1}"
-                        }
-                else:
-                    # For HKID, Passport, etc.
-                    return True, rule_id, rule_name.upper().replace('_BLOCKS_MATCH', ''), {
-                        f'party1_{attribute_subtype}': value1,
-                        f'party2_{attribute_subtype}': value2
-                    }
+        rule = rules_by_attr[attribute_subtype]
+        value1 = attrs1.get(attribute_subtype)
+        value2 = attrs2.get(attribute_subtype)
         
-        elif blocking_logic == 'THRESHOLD_EXCEEDED':
-            # For temporal conflicts (e.g., DOB difference)
-            threshold = rule['threshold_value']
-            # TODO: Implement temporal comparison logic
-            # For now, skip this type
+        # Skip if both values are null
+        if not value1 and not value2:
             continue
+        
+        # Case 1: Both values exist - compare them
+        if value1 and value2:
+            if value1 == value2:
+                # MATCH - create match evidence
+                match_weight = rule.get('match_weight', 0.0)
+                if match_weight > 0:
+                    match_evidences.append({
+                        'evidence_id': str(uuid.uuid4()),
+                        'party_id_1': party1_id,
+                        'party_id_2': party2_id,
+                        'match_type': 'EXACT_MATCH',
+                        'match_rule_id': f"RULE_EXACT_{attribute_subtype}",
+                        'match_key': attribute_subtype,
+                        'evidence_value': value1,
+                        'confidence_score': 1.0 if rule.get('hard_link_threshold') == 1.0 else 0.95,
+                        'created_at': datetime.now().isoformat(),
+                        'blocking_keys': 'PHASE_1'
+                    })
+            else:
+                # DIFFERENCE - create difference evidence
+                difference_weight = rule.get('difference_weight', 0.0)
+                if difference_weight > 0:
+                    difference_evidences.append({
+                        'evidence_id': str(uuid.uuid4()),
+                        'party_id_1': party1_id,
+                        'party_id_2': party2_id,
+                        'attribute_subtype_id': attribute_subtype,
+                        'value_1': value1,
+                        'value_2': value2,
+                        'severity_score': difference_weight,
+                        'is_hard_block': False,
+                        'difference_type': 'SOFT_CONFLICT',
+                        'created_at': datetime.now().isoformat()
+                    })
     
-    return False, None, None, None
+    return match_evidences, difference_evidences, evaluation_complete
 
 
-def run_match_rules(party1_id, party2_id, attrs1, attrs2):
+def generate_phase1_evidence(cluster_df, std_attr_df, raw_attr_df, source_party_df, 
+                             evidence_rules_df, metadata_column_df):
     """
-    Run match rules and return list of evidence records.
-    
-    Returns: list of (match_rule_id, match_key, evidence_value, confidence_score)
-    """
-    evidence = []
-    
-    # Rule 1: Exact HKID match (highest confidence)
-    hkid1 = attrs1.get('SUB_HKID')
-    hkid2 = attrs2.get('SUB_HKID')
-    if hkid1 and hkid2 and hkid1 == hkid2:
-        evidence.append(('RULE_EXACT_HKID', 'HKID', hkid1, 1.0))
-    
-    # Rule 2: Exact Passport match
-    passport1 = attrs1.get('SUB_PASSPORT')
-    passport2 = attrs2.get('SUB_PASSPORT')
-    if passport1 and passport2 and passport1 == passport2:
-        evidence.append(('RULE_EXACT_PASSPORT', 'PASSPORT', passport1, 1.0))
-    
-    # Rule 3: Exact Email match
-    email1 = attrs1.get('ATTR_EMAIL')
-    email2 = attrs2.get('ATTR_EMAIL')
-    if email1 and email2 and email1 == email2:
-        evidence.append(('RULE_EXACT_EMAIL', 'EMAIL', email1, 0.95))
-    
-    # Rule 4: Exact Phone match
-    phone1 = attrs1.get('ATTR_PHONE')
-    phone2 = attrs2.get('ATTR_PHONE')
-    if phone1 and phone2 and phone1 == phone2:
-        evidence.append(('RULE_EXACT_PHONE', 'PHONE', phone1, 0.9))
-    
-    # Rule 5: Exact Name + DOB match
-    fname1 = attrs1.get('ATTR_FIRST_NAME')
-    fname2 = attrs2.get('ATTR_FIRST_NAME')
-    lname1 = attrs1.get('ATTR_LAST_NAME')
-    lname2 = attrs2.get('ATTR_LAST_NAME')
-    dob1 = attrs1.get('ATTR_DOB')  # DOB is stored as ATTR_DOB
-    dob2 = attrs2.get('ATTR_DOB')  # DOB is stored as ATTR_DOB
-    
-    if (fname1 and fname2 and fname1 == fname2 and
-        lname1 and lname2 and lname1 == lname2 and
-        dob1 and dob2 and dob1 == dob2):
-        evidence.append(('RULE_EXACT_NAME_DOB', 'NAME_DOB', f"{fname1}|{lname1}|{dob1}", 0.95))
-    
-    # Rule 6: Exact Full Name + Email match
-    if (fname1 and fname2 and fname1 == fname2 and
-        lname1 and lname2 and lname1 == lname2 and
-        email1 and email2 and email1 == email2):
-        evidence.append(('RULE_EXACT_NAME_EMAIL', 'NAME_EMAIL', f"{fname1}|{lname1}|{email1}", 0.92))
-    
-    return evidence
-
-
-def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df, blocking_rules_df):
-    """
-    Phase 1: Generate match evidence within clusters.
-    
+    Phase 1: Generate match and difference evidence within clusters.
     For each cluster, compare all pairs of parties.
     """
     print("\n" + "="*70)
-    print("PHASE 1: WITHIN-CLUSTER MATCHING")
+    print("PHASE 1: WITHIN-CLUSTER EVIDENCE COLLECTION")
     print("="*70)
     
-    evidence_records = []
-    blocking_records = []
+    match_records = []
+    difference_records = []
     seen_pairs = set()
     
     cluster_stats = defaultdict(int)
@@ -221,7 +219,6 @@ def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df, blocking_
         party_ids = cluster_group['party_id'].tolist()
         
         if len(party_ids) < 2:
-            # Singleton cluster, no pairs to compare
             cluster_stats['singleton_clusters'] += 1
             continue
         
@@ -232,7 +229,7 @@ def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df, blocking_
         cluster_stats['total_pairs'] += len(pairs)
         
         for party1_id, party2_id in pairs:
-            # Normalize pair order (always smaller ID first)
+            # Normalize pair order
             pair_key = tuple(sorted([party1_id, party2_id]))
             
             if pair_key in seen_pairs:
@@ -244,78 +241,52 @@ def generate_phase1_evidence(cluster_df, std_attr_df, source_party_df, blocking_
             attrs1 = get_party_attributes(party1_id, std_attr_df)
             attrs2 = get_party_attributes(party2_id, std_attr_df)
             
-            # Check blocking rules
-            is_blocked, blocking_rule_id, blocking_reason, blocking_details = check_blocking_rules(
-                party1_id, party2_id, attrs1, attrs2, blocking_rules_df
+            # Collect all evidence (matches and differences)
+            match_evs, diff_evs, eval_complete = collect_pair_evidence(
+                party1_id, party2_id, attrs1, attrs2, 
+                std_attr_df, raw_attr_df, evidence_rules_df, metadata_column_df
             )
             
-            if is_blocked:
-                # Create blocking record
-                blocking_records.append({
-                    'blocking_id': str(uuid.uuid4()),
-                    'party_id_1': party1_id,
-                    'party_id_2': party2_id,
-                    'blocking_reason_code': blocking_reason,
-                    'blocking_rule_id': blocking_rule_id,
-                    'blocking_source': 'AUTOMATIC',
-                    'conflicting_attribute_subtype_id': list(blocking_details.keys())[0].replace('party1_', '').replace('party2_', '') if blocking_details else None,
-                    'conflict_details': str(blocking_details),
-                    'created_at': datetime.now().isoformat(),
-                    'is_active': True,
-                    'created_by': 'SYSTEM'
-                })
-                cluster_stats['blocked_pairs'] += 1
-                continue
-            
-            # Run match rules
-            match_evidence = run_match_rules(party1_id, party2_id, attrs1, attrs2)
-            
-            if not match_evidence:
-                # No evidence found
+            # Track statistics
+            if diff_evs and any(d['is_hard_block'] for d in diff_evs):
+                cluster_stats['hard_blocked_pairs'] += 1
+            elif match_evs:
+                cluster_stats['pairs_with_matches'] += 1
+            if diff_evs:
+                cluster_stats['pairs_with_differences'] += 1
+            if not match_evs and not diff_evs:
                 cluster_stats['no_evidence_pairs'] += 1
-                continue
             
-            # Create evidence records (one per match rule that fired)
-            for rule_id, match_key, evidence_value, confidence in match_evidence:
-                evidence_records.append({
-                    'evidence_id': str(uuid.uuid4()),
-                    'party_id_1': party1_id,
-                    'party_id_2': party2_id,
-                    'match_type': 'PII',
-                    'match_rule_id': rule_id,
-                    'match_key': match_key,
-                    'evidence_value': evidence_value,
-                    'confidence_score': confidence,
-                    'created_at': datetime.now().isoformat(),
-                    'blocking_keys': f'CLUSTER:{cluster_id}'
-                })
-            
-            cluster_stats['evidence_pairs'] += 1
+            # Store evidence
+            match_records.extend(match_evs)
+            difference_records.extend(diff_evs)
     
     print(f"\n✓ Phase 1 Complete:")
     print(f"  Multi-party clusters: {cluster_stats['multi_party_clusters']}")
     print(f"  Singleton clusters: {cluster_stats['singleton_clusters']}")
     print(f"  Total pairs compared: {cluster_stats['total_pairs']}")
-    print(f"  Pairs with evidence: {cluster_stats['evidence_pairs']}")
-    print(f"  Pairs blocked: {cluster_stats['blocked_pairs']}")
-    print(f"  Pairs with no evidence: {cluster_stats['no_evidence_pairs']}")
-    print(f"  Total evidence records: {len(evidence_records)}")
-    print(f"  Total blocking records: {len(blocking_records)}")
+    print(f"  Pairs with matches: {cluster_stats.get('pairs_with_matches', 0)}")
+    print(f"  Pairs with differences: {cluster_stats.get('pairs_with_differences', 0)}")
+    print(f"  Hard blocked pairs: {cluster_stats.get('hard_blocked_pairs', 0)}")
+    print(f"  No evidence pairs: {cluster_stats.get('no_evidence_pairs', 0)}")
+    print(f"  Total match evidence: {len(match_records)}")
+    print(f"  Total difference evidence: {len(difference_records)}")
     
-    return evidence_records, blocking_records, seen_pairs
+    return match_records, difference_records, seen_pairs
 
 
-def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking_records, seen_pairs, blocking_rules_df):
+def generate_phase2_evidence(cluster_df, std_attr_df, raw_attr_df, match_records, 
+                             difference_records, seen_pairs, evidence_rules_df, metadata_column_df):
     """
-    Phase 2: Generate match evidence across clusters using strong PII blocking keys.
+    Phase 2: Generate evidence across clusters using strong PII blocking keys.
     
     Only compares pairs that:
     - Were NOT already compared in Phase 1
     - Are in DIFFERENT clusters
-    - Share a strong PII attribute (HKID, Passport, Email)
+    - Share a strong PII attribute (HKID, Passport, Email, DOB)
     """
     print("\n" + "="*70)
-    print("PHASE 2: CROSS-CLUSTER MATCHING (STRONG PII)")
+    print("PHASE 2: CROSS-CLUSTER EVIDENCE COLLECTION (STRONG PII)")
     print("="*70)
     
     phase2_stats = defaultdict(int)
@@ -381,115 +352,96 @@ def generate_phase2_evidence(cluster_df, std_attr_df, evidence_records, blocking
                 attrs1 = get_party_attributes(party1_id, std_attr_df)
                 attrs2 = get_party_attributes(party2_id, std_attr_df)
                 
-                # Check blocking rules
-                is_blocked, blocking_rule_id, blocking_reason, blocking_details = check_blocking_rules(
-                    party1_id, party2_id, attrs1, attrs2, blocking_rules_df
+                # Collect all evidence
+                match_evs, diff_evs, eval_complete = collect_pair_evidence(
+                    party1_id, party2_id, attrs1, attrs2,
+                    std_attr_df, raw_attr_df, evidence_rules_df, metadata_column_df
                 )
                 
-                if is_blocked:
-                    # Create blocking record
-                    blocking_records.append({
-                        'blocking_id': str(uuid.uuid4()),
-                        'party_id_1': party1_id,
-                        'party_id_2': party2_id,
-                        'blocking_reason_code': blocking_reason,
-                        'blocking_rule_id': blocking_rule_id,
-                        'blocking_source': 'AUTOMATIC',
-                        'conflicting_attribute_subtype_id': list(blocking_details.keys())[0].replace('party1_', '').replace('party2_', '') if blocking_details else None,
-                        'conflict_details': str(blocking_details),
-                        'created_at': datetime.now().isoformat(),
-                        'is_active': True,
-                        'created_by': 'SYSTEM'
-                    })
-                    phase2_stats[f'{blocking_key_name}_blocked'] += 1
-                    continue
+                # Update blocking keys for phase 2
+                for match_ev in match_evs:
+                    match_ev['blocking_keys'] = blocking_key_name
                 
-                # Run match rules
-                match_evidence = run_match_rules(party1_id, party2_id, attrs1, attrs2)
+                # Track statistics
+                if diff_evs and any(d['is_hard_block'] for d in diff_evs):
+                    phase2_stats[f'{blocking_key_name}_hard_blocked'] += 1
+                elif match_evs:
+                    phase2_stats[f'{blocking_key_name}_matches'] += 1
+                if diff_evs:
+                    phase2_stats[f'{blocking_key_name}_differences'] += 1
                 
-                if not match_evidence:
-                    phase2_stats[f'{blocking_key_name}_no_evidence'] += 1
-                    continue
-                
-                # Create evidence records
-                for rule_id, match_key, evidence_value, confidence in match_evidence:
-                    evidence_records.append({
-                        'evidence_id': str(uuid.uuid4()),
-                        'party_id_1': party1_id,
-                        'party_id_2': party2_id,
-                        'match_type': 'PII',
-                        'match_rule_id': rule_id,
-                        'match_key': match_key,
-                        'evidence_value': evidence_value,
-                        'confidence_score': confidence,
-                        'created_at': datetime.now().isoformat(),
-                        'blocking_keys': blocking_key_name
-                    })
-                
-                phase2_stats[f'{blocking_key_name}_evidence'] += 1
+                # Store evidence
+                match_records.extend(match_evs)
+                difference_records.extend(diff_evs)
         
         print(f"    Candidate pairs: {candidates_found}")
         print(f"    Skipped (same cluster): {pairs_skipped_same_cluster}")
         print(f"    Skipped (already seen): {pairs_skipped_seen}")
         print(f"    New pairs compared: {pairs_compared}")
-        print(f"    Pairs with evidence: {phase2_stats.get(f'{blocking_key_name}_evidence', 0)}")
-        print(f"    Pairs blocked: {phase2_stats.get(f'{blocking_key_name}_blocked', 0)}")
     
     # Overall Phase 2 stats
-    total_evidence = sum(v for k, v in phase2_stats.items() if '_evidence' in k)
-    total_blocked = sum(v for k, v in phase2_stats.items() if '_blocked' in k)
+    total_matches = sum(v for k, v in phase2_stats.items() if '_matches' in k)
+    total_differences = sum(v for k, v in phase2_stats.items() if '_differences' in k)
+    total_hard_blocked = sum(v for k, v in phase2_stats.items() if '_hard_blocked' in k)
     
     print(f"\n✓ Phase 2 Complete:")
-    print(f"  Total new evidence records: {total_evidence}")
-    print(f"  Total new blocking records: {total_blocked}")
+    print(f"  Pairs with matches: {total_matches}")
+    print(f"  Pairs with differences: {total_differences}")
+    print(f"  Hard blocked pairs: {total_hard_blocked}")
     
-    return evidence_records, blocking_records
+    return match_records, difference_records
 
 
-def export_match_data(evidence_df, blocking_df, output_dir='data/silver'):
-    """Export MATCH_EVIDENCE and MATCH_BLOCKING to CSV"""
+def export_evidence_data(match_evidence_df, difference_evidence_df, output_dir='data/silver'):
+    """Export MATCH_EVIDENCE and DIFFERENCE_EVIDENCE to CSV"""
     project_root = Path(__file__).parent.parent.parent
     silver_dir = project_root / output_dir
     silver_dir.mkdir(parents=True, exist_ok=True)
     
-    evidence_file = silver_dir / 'match_evidence.csv'
-    blocking_file = silver_dir / 'match_blocking.csv'
+    match_file = silver_dir / 'match_evidence.csv'
+    diff_file = silver_dir / 'difference_evidence.csv'
     
-    evidence_df.to_csv(evidence_file, index=False)
-    blocking_df.to_csv(blocking_file, index=False)
+    match_evidence_df.to_csv(match_file, index=False)
+    difference_evidence_df.to_csv(diff_file, index=False)
     
     print(f"\n✓ Exported to:")
-    print(f"  {evidence_file}")
-    print(f"  {blocking_file}")
+    print(f"  {match_file}")
+    print(f"  {diff_file}")
 
 
 def main():
     print("="*70)
-    print("MATCH EVIDENCE COMPUTATION")
+    print("EVIDENCE COLLECTION - MATCH & DIFFERENCE")
     print("="*70)
     
     # Load data
-    cluster_df, std_attr_df, source_party_df, blocking_rules_df = load_data()
+    cluster_df, std_attr_df, raw_attr_df, source_party_df, evidence_rules_df, metadata_column_df = load_data()
     
-    # Phase 1: Within-cluster matching
-    evidence_records, blocking_records, seen_pairs = generate_phase1_evidence(
-        cluster_df, std_attr_df, source_party_df, blocking_rules_df
+    # Phase 1: Within-cluster evidence collection
+    match_records, difference_records, seen_pairs = generate_phase1_evidence(
+        cluster_df, std_attr_df, raw_attr_df, source_party_df, evidence_rules_df, metadata_column_df
     )
     
-    # Phase 2: Cross-cluster matching (strong PII)
-    evidence_records, blocking_records = generate_phase2_evidence(
-        cluster_df, std_attr_df, evidence_records, blocking_records, seen_pairs, blocking_rules_df
+    # Phase 2: Cross-cluster evidence collection (strong PII)
+    match_records, difference_records = generate_phase2_evidence(
+        cluster_df, std_attr_df, raw_attr_df, match_records, difference_records, 
+        seen_pairs, evidence_rules_df, metadata_column_df
     )
     
     # Convert to DataFrames
-    evidence_df = pd.DataFrame(evidence_records)
-    blocking_df = pd.DataFrame(blocking_records)
+    match_evidence_df = pd.DataFrame(match_records)
+    difference_evidence_df = pd.DataFrame(difference_records)
+    
+    print(f"\n✓ Total Evidence Collected:")
+    print(f"  Match evidence: {len(match_evidence_df)}")
+    print(f"  Difference evidence: {len(difference_evidence_df)}")
+    print(f"  Hard blocks: {len(difference_evidence_df[difference_evidence_df['is_hard_block'] == True]) if len(difference_evidence_df) > 0 else 0}")
     
     # Export
-    export_match_data(evidence_df, blocking_df)
+    export_evidence_data(match_evidence_df, difference_evidence_df)
     
     print("\n" + "="*70)
-    print("✅ MATCH EVIDENCE COMPUTATION COMPLETE")
+    print("✅ EVIDENCE COLLECTION COMPLETE")
     print("="*70)
 
 

@@ -1,0 +1,11 @@
+attribute_subtype_id,match_weight,difference_weight,hard_link_threshold,hard_block_threshold,is_active,priority,description
+SUB_HKID,0.50,1.0,1.0,1.0,True,10,Hong Kong ID - strongest identity indicator
+SUB_PASSPORT,0.40,1.0,1.0,1.0,True,9,Passport number - very strong identity indicator
+ATTR_EMAIL,0.30,0.5,,,True,8,Email address - strong contact indicator
+ATTR_PHONE,0.20,0.3,,,True,7,Phone number - medium contact indicator
+ATTR_FIRST_NAME,0.10,0.2,,,True,5,First name - weak identity indicator
+ATTR_LAST_NAME,0.10,0.2,,,True,5,Last name - weak identity indicator
+ATTR_DOB,0.25,0.5,,,True,6,Date of birth - strong demographic indicator
+ATTR_GENDER,0.05,0.3,,,True,4,Gender - weak demographic indicator with high conflict penalty
+ATTR_ADDRESS,0.15,0.2,,,True,5,Address - medium contact indicator
+ATTR_GOV_ID,0.45,1.0,1.0,1.0,True,9,Government ID - very strong identity indicator

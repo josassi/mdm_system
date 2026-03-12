@@ -39,38 +39,136 @@ from collections import defaultdict
 
 
 def load_data():
-    """Load Silver layer match evidence and blocking data"""
+    """Load Silver layer evidence and metadata for scoring"""
     project_root = Path(__file__).parent.parent.parent
     bronze_dir = project_root / 'data/bronze'
     silver_dir = project_root / 'data/silver'
     metadata_dir = project_root / 'data/uat_generation/metadata'
     
-    print("Loading match evidence and blocking data...")
+    print("Loading evidence and metadata...")
     
     source_party = pd.read_csv(bronze_dir / 'source_party.csv')
     match_evidence = pd.read_csv(silver_dir / 'match_evidence.csv')
-    match_blocking = pd.read_csv(silver_dir / 'match_blocking.csv')
+    difference_evidence = pd.read_csv(silver_dir / 'difference_evidence.csv')
     standardized_attr = pd.read_csv(silver_dir / 'standardized_attribute.csv')
-    blocking_rules = pd.read_csv(metadata_dir / 'metadata_blocking_rule.csv')
+    relationships = pd.read_csv(bronze_dir / 'relationship.csv')
+    evidence_rules = pd.read_csv(metadata_dir / 'metadata_evidence_rule.csv')
+    metadata_relationship = pd.read_csv(metadata_dir / 'metadata_relationship.csv')
     
     print(f"  ✓ Loaded {len(source_party)} SOURCE_PARTY records")
     print(f"  ✓ Loaded {len(match_evidence)} MATCH_EVIDENCE records")
-    print(f"  ✓ Loaded {len(match_blocking)} MATCH_BLOCKING records")
+    print(f"  ✓ Loaded {len(difference_evidence)} DIFFERENCE_EVIDENCE records")
     print(f"  ✓ Loaded {len(standardized_attr)} STANDARDIZED_ATTRIBUTE records")
-    print(f"  ✓ Loaded {len(blocking_rules)} METADATA_BLOCKING_RULE records")
+    print(f"  ✓ Loaded {len(relationships)} RELATIONSHIP records")
+    print(f"  ✓ Loaded {len(evidence_rules)} METADATA_EVIDENCE_RULE records")
+    print(f"  ✓ Loaded {len(metadata_relationship)} METADATA_RELATIONSHIP records")
     
-    return source_party, match_evidence, match_blocking, standardized_attr, blocking_rules
+    return (source_party, match_evidence, difference_evidence, standardized_attr, 
+            relationships, evidence_rules, metadata_relationship)
 
 
-def build_candidate_entities(match_evidence_df, all_party_ids):
+def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evidence_df, 
+                       relationships_df, evidence_rules_df, metadata_relationship_df):
     """
-    Build candidate entities from match evidence using graph clustering.
-    Include singleton entities for parties with no match evidence.
+    Compute aggregate score for a pair based on all evidence types.
+    
+    Returns: (decision, score, reason)
+    decision: 'MUST_NOT_MERGE' | 'MUST_MERGE' | 'MERGE' | 'NO_MERGE'
+    """
+    # Get evidence for this pair
+    pair_matches = match_evidence_df[
+        ((match_evidence_df['party_id_1'] == party1_id) & (match_evidence_df['party_id_2'] == party2_id)) |
+        ((match_evidence_df['party_id_1'] == party2_id) & (match_evidence_df['party_id_2'] == party1_id))
+    ]
+    
+    pair_differences = difference_evidence_df[
+        ((difference_evidence_df['party_id_1'] == party1_id) & (difference_evidence_df['party_id_2'] == party2_id)) |
+        ((difference_evidence_df['party_id_1'] == party2_id) & (difference_evidence_df['party_id_2'] == party1_id))
+    ]
+    
+    pair_relationships = relationships_df[
+        ((relationships_df['from_party_id'] == party1_id) & (relationships_df['to_party_id'] == party2_id)) |
+        ((relationships_df['from_party_id'] == party2_id) & (relationships_df['to_party_id'] == party1_id))
+    ]
+    
+    # Priority 1: Hard blocks (severity=1.0)
+    hard_blocks = pair_differences[pair_differences['is_hard_block'] == True]
+    if len(hard_blocks) > 0:
+        attr = hard_blocks.iloc[0]['attribute_subtype_id']
+        return ('MUST_NOT_MERGE', 0.0, f'Hard block: {attr}')
+    
+    # Priority 2: Hard links from match evidence (confidence=1.0)
+    hard_matches = pair_matches[pair_matches['confidence_score'] == 1.0]
+    if len(hard_matches) > 0:
+        attr = hard_matches.iloc[0]['match_key']
+        return ('MUST_MERGE', 1.0, f'Hard link: {attr}')
+    
+    # Priority 2b: Hard links from relationships (guarantees_same_party=True, confidence=1.0)
+    for _, rel in pair_relationships.iterrows():
+        rel_meta = metadata_relationship_df[
+            metadata_relationship_df['relationship_id'] == rel['metadata_relationship_id']
+        ]
+        if len(rel_meta) > 0:
+            meta = rel_meta.iloc[0]
+            if meta.get('guarantees_same_party') and meta.get('confidence_score') == 1.0:
+                return ('MUST_MERGE', 1.0, f'Hard link: Relationship {rel["metadata_relationship_id"]}')
+    
+    # Priority 3: Aggregate scoring
+    rules_dict = {row['attribute_subtype_id']: row for _, row in evidence_rules_df.iterrows()}
+    
+    match_score = 0.0
+    for _, match in pair_matches.iterrows():
+        # Use match_weight from rules
+        attr = match['match_key']
+        if attr in rules_dict:
+            weight = rules_dict[attr].get('match_weight', 0.0)
+            match_score += match['confidence_score'] * weight
+    
+    # Add relationship score if exists
+    for _, rel in pair_relationships.iterrows():
+        rel_meta = metadata_relationship_df[
+            metadata_relationship_df['relationship_id'] == rel['metadata_relationship_id']
+        ]
+        if len(rel_meta) > 0:
+            meta = rel_meta.iloc[0]
+            conf = meta.get('confidence_score', 0.0)
+            if conf < 1.0:  # Soft relationships
+                match_score += conf * 0.3  # Relationship weight
+    
+    penalty_score = 0.0
+    for _, diff in pair_differences.iterrows():
+        attr = diff['attribute_subtype_id']
+        if attr in rules_dict:
+            severity = diff['severity_score']
+            penalty_score += severity
+    
+    # Normalize to [0, 1]
+    max_possible = sum(rules_dict[attr]['match_weight'] for attr in rules_dict if rules_dict[attr]['match_weight'] > 0)
+    if max_possible == 0:
+        max_possible = 1.0
+    
+    raw_score = (match_score - penalty_score) / max_possible
+    final_score = max(0.0, min(1.0, raw_score))
+    
+    # Decision based on threshold
+    MERGE_THRESHOLD = 0.5  # Configurable
+    
+    if final_score >= MERGE_THRESHOLD:
+        return ('MERGE', final_score, f'Score {final_score:.2f} >= threshold')
+    else:
+        return ('NO_MERGE', final_score, f'Score {final_score:.2f} < threshold')
+
+
+def build_candidate_entities(match_evidence_df, difference_evidence_df, relationships_df,
+                             evidence_rules_df, metadata_relationship_df, all_party_ids):
+    """
+    Build candidate entities using scoring-based graph clustering.
+    Only create edges for pairs that should merge based on aggregate scores.
     
     Returns: dict of {entity_id: [party_ids]}
     """
     print("\n" + "="*70)
-    print("BUILDING CANDIDATE ENTITIES FROM MATCH EVIDENCE")
+    print("BUILDING ENTITIES WITH SCORING-BASED CLUSTERING")
     print("="*70)
     
     # Create graph
@@ -79,22 +177,43 @@ def build_candidate_entities(match_evidence_df, all_party_ids):
     # Add all parties as nodes (ensures singletons are included)
     G.add_nodes_from(all_party_ids)
     
-    # Add edges from match evidence
+    # Get all unique pairs with any evidence (only for parties with attributes)
+    all_party_ids_set = set(all_party_ids)
+    pairs_with_evidence = set()
+    
     for _, row in match_evidence_df.iterrows():
-        party1 = row['party_id_1']
-        party2 = row['party_id_2']
-        confidence = row['confidence_score']
-        rule_id = row['match_rule_id']
+        p1, p2 = row['party_id_1'], row['party_id_2']
+        if p1 in all_party_ids_set and p2 in all_party_ids_set:
+            pair = tuple(sorted([p1, p2]))
+            pairs_with_evidence.add(pair)
+    
+    for _, row in difference_evidence_df.iterrows():
+        p1, p2 = row['party_id_1'], row['party_id_2']
+        if p1 in all_party_ids_set and p2 in all_party_ids_set:
+            pair = tuple(sorted([p1, p2]))
+            pairs_with_evidence.add(pair)
+    
+    for _, row in relationships_df.iterrows():
+        p1, p2 = row['from_party_id'], row['to_party_id']
+        # Only include if BOTH parties have attributes (exclude business objects)
+        if p1 in all_party_ids_set and p2 in all_party_ids_set:
+            pair = tuple(sorted([p1, p2]))
+            pairs_with_evidence.add(pair)
+    
+    # Score each pair and decide whether to create edge
+    decision_stats = defaultdict(int)
+    
+    for party1_id, party2_id in pairs_with_evidence:
+        decision, score, reason = compute_pair_score(
+            party1_id, party2_id, match_evidence_df, difference_evidence_df,
+            relationships_df, evidence_rules_df, metadata_relationship_df
+        )
         
-        # Add edge with weight = confidence
-        if G.has_edge(party1, party2):
-            # Multiple evidence for same pair - keep highest confidence
-            current_weight = G[party1][party2]['weight']
-            if confidence > current_weight:
-                G[party1][party2]['weight'] = confidence
-                G[party1][party2]['rule_id'] = rule_id
-        else:
-            G.add_edge(party1, party2, weight=confidence, rule_id=rule_id)
+        decision_stats[decision] += 1
+        
+        # Only create edge if should merge
+        if decision in ['MUST_MERGE', 'MERGE']:
+            G.add_edge(party1_id, party2_id, weight=score, decision=decision, reason=reason)
     
     # Find connected components (includes isolated nodes as singletons)
     components = list(nx.connected_components(G))
@@ -102,15 +221,21 @@ def build_candidate_entities(match_evidence_df, all_party_ids):
     # Create candidate entities
     candidate_entities = {}
     for i, component in enumerate(components):
-        entity_id = f"CANDIDATE_{i+1:04d}"
+        entity_id = f"ENTITY_{i+1:04d}"
         candidate_entities[entity_id] = sorted(list(component))
     
-    print(f"\n✓ Created {len(candidate_entities)} candidate entities")
+    print(f"\n✓ Scoring decisions:")
+    print(f"  MUST_MERGE (hard links): {decision_stats.get('MUST_MERGE', 0)}")
+    print(f"  MERGE (scored >= threshold): {decision_stats.get('MERGE', 0)}")
+    print(f"  NO_MERGE (scored < threshold): {decision_stats.get('NO_MERGE', 0)}")
+    print(f"  MUST_NOT_MERGE (hard blocks): {decision_stats.get('MUST_NOT_MERGE', 0)}")
+    
+    print(f"\n✓ Created {len(candidate_entities)} entities")
     print(f"  Total parties in entities: {sum(len(parties) for parties in candidate_entities.values())}")
     print(f"  Largest entity: {max(len(parties) for parties in candidate_entities.values())} parties")
     print(f"  Singleton entities: {sum(1 for parties in candidate_entities.values() if len(parties) == 1)}")
     
-    return candidate_entities, G
+    return candidate_entities, G, decision_stats
 
 
 def get_party_attributes(party_id, std_attr_df):
@@ -353,7 +478,7 @@ def resolve_entities_with_conflicts(candidate_entities, entity_graph, std_attr_d
     return resolved_entities, conflict_stats, new_blocking_records
 
 
-def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_df, match_blocking_df):
+def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_df, difference_evidence_df):
     """
     Compute comprehensive analytics for an entity.
     
@@ -415,13 +540,13 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
         if len(evidence) > 0:
             analytics['pairs_with_evidence'] += 1
         
-        # Check if pair is blocked
-        blocking = match_blocking_df[
-            (((match_blocking_df['party_id_1'] == party1_id) & (match_blocking_df['party_id_2'] == party2_id)) |
-             ((match_blocking_df['party_id_1'] == party2_id) & (match_blocking_df['party_id_2'] == party1_id))) &
-            (match_blocking_df['is_active'] == True)
+        # Check if pair has hard block
+        differences = difference_evidence_df[
+            (((difference_evidence_df['party_id_1'] == party1_id) & (difference_evidence_df['party_id_2'] == party2_id)) |
+             ((difference_evidence_df['party_id_1'] == party2_id) & (difference_evidence_df['party_id_2'] == party1_id))) &
+            (difference_evidence_df['is_hard_block'] == True)
         ]
-        if len(blocking) > 0:
+        if len(differences) > 0:
             analytics['pairs_blocked'] += 1
         
         # Compute attribute-level match score
@@ -474,7 +599,7 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
     return analytics
 
 
-def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, match_blocking_df):
+def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, difference_evidence_df):
     """Generate MASTER_ENTITY table with comprehensive analytics"""
     master_entities = []
     
@@ -483,7 +608,7 @@ def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, 
     for entity_id, party_ids in resolved_entities.items():
         # Compute analytics for this entity
         analytics = compute_entity_analytics(
-            entity_id, party_ids, std_attr_df, match_evidence_df, match_blocking_df
+            entity_id, party_ids, std_attr_df, match_evidence_df, difference_evidence_df
         )
         
         master_entities.append({
@@ -533,7 +658,7 @@ def generate_party_to_entity_links(resolved_entities):
     return pd.DataFrame(links)
 
 
-def export_gold_tables(master_entity_df, party_link_df, new_blocking_df, output_dir='data/gold'):
+def export_gold_tables(master_entity_df, party_link_df, output_dir='data/gold'):
     """Export Gold layer tables"""
     project_root = Path(__file__).parent.parent.parent
     gold_dir = project_root / output_dir
@@ -545,15 +670,6 @@ def export_gold_tables(master_entity_df, party_link_df, new_blocking_df, output_
     master_entity_df.to_csv(master_entity_file, index=False)
     party_link_df.to_csv(party_link_file, index=False)
     
-    # Append new transitive blocking records to existing MATCH_BLOCKING
-    if len(new_blocking_df) > 0:
-        silver_dir = project_root / 'data/silver'
-        blocking_file = silver_dir / 'match_blocking.csv'
-        existing_blocking = pd.read_csv(blocking_file)
-        updated_blocking = pd.concat([existing_blocking, new_blocking_df], ignore_index=True)
-        updated_blocking.to_csv(blocking_file, index=False)
-        print(f"\n✓ Appended {len(new_blocking_df)} transitive blocking records to MATCH_BLOCKING")
-    
     print(f"\n✓ Exported to:")
     print(f"  {master_entity_file}")
     print(f"  {party_link_file}")
@@ -561,11 +677,12 @@ def export_gold_tables(master_entity_df, party_link_df, new_blocking_df, output_
 
 def main():
     print("="*70)
-    print("ENTITY RESOLUTION WITH TRANSITIVE CONFLICT DETECTION")
+    print("ENTITY RESOLUTION WITH SCORING-BASED CLUSTERING")
     print("="*70)
     
     # Load data
-    source_party_df, match_evidence_df, match_blocking_df, std_attr_df, blocking_rules_df = load_data()
+    (source_party_df, match_evidence_df, difference_evidence_df, std_attr_df,
+     relationships_df, evidence_rules_df, metadata_relationship_df) = load_data()
     
     # Get only parties with attributes (exclude business objects)
     parties_with_attrs = std_attr_df['source_party_id'].unique().tolist()
@@ -576,20 +693,17 @@ def main():
     print(f"  Parties without attributes (business objects): {len(all_party_ids) - len(parties_with_attrs)}")
     print(f"  → Creating entities only for parties with attributes")
     
-    # Build candidate entities from match evidence graph (only for parties with attributes)
-    candidate_entities, entity_graph = build_candidate_entities(match_evidence_df, parties_with_attrs)
-    
-    # Detect and resolve transitive conflicts
-    resolved_entities, conflict_stats, new_blocking_records = resolve_entities_with_conflicts(
-        candidate_entities, entity_graph, std_attr_df, blocking_rules_df, match_blocking_df
+    # Build entities using scoring-based clustering (only for parties with attributes)
+    entities, entity_graph, decision_stats = build_candidate_entities(
+        match_evidence_df, difference_evidence_df, relationships_df,
+        evidence_rules_df, metadata_relationship_df, parties_with_attrs
     )
     
     # Generate Gold layer tables with analytics
     master_entity_df = generate_master_entities(
-        resolved_entities, std_attr_df, match_evidence_df, match_blocking_df
+        entities, std_attr_df, match_evidence_df, difference_evidence_df
     )
-    party_link_df = generate_party_to_entity_links(resolved_entities)
-    new_blocking_df = pd.DataFrame(new_blocking_records)
+    party_link_df = generate_party_to_entity_links(entities)
     
     print(f"\n  Verification: {len(party_link_df)} party-to-entity links for {len(parties_with_attrs)} parties with attributes")
     if len(party_link_df) != len(parties_with_attrs):
@@ -598,7 +712,7 @@ def main():
         print(f"  ✅ All parties with attributes have entity assignments")
     
     # Export
-    export_gold_tables(master_entity_df, party_link_df, new_blocking_df)
+    export_gold_tables(master_entity_df, party_link_df)
     
     print("\n" + "="*70)
     print("✅ ENTITY RESOLUTION COMPLETE")
