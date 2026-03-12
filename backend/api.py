@@ -585,9 +585,10 @@ def get_dashboard_stats():
             how='left'
         )
         
-        # Distinct HKID count (count unique ATTR_GOV_ID values)
-        hkid_attrs = std_attrs_with_type[
-            std_attrs_with_type['attribute_type'] == 'ATTR_GOV_ID'
+        # Distinct HKID count (count unique SUB_HKID values)
+        # HKIDs are stored with attribute_subtype_id='SUB_HKID' in standardized_attribute
+        hkid_attrs = data['standardized_attribute'][
+            data['standardized_attribute']['attribute_subtype_id'] == 'SUB_HKID'
         ]
         distinct_hkids = hkid_attrs['standardized_value'].nunique()
         
