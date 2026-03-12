@@ -480,25 +480,20 @@ def resolve_entities_with_conflicts(candidate_entities, entity_graph, std_attr_d
 
 def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_df, difference_evidence_df):
     """
-    Compute comprehensive analytics for an entity.
+    Compute entity analytics.
     
     Metrics:
-    - Attribute coverage: unique attributes, total attribute instances
-    - Attribute quality: fully matching attributes, contradictions
-    - Pair quality: non-matching pairs (<=70%), ok pairs (70-90%), matching pairs (>90%)
-    - Link scores: average pair score based on attribute overlap
+    - Entity size: party_count, total_pairs
+    - Attribute coverage: unique_attributes, total_attribute_instances
+    - Attribute quality: fully_matching_attributes, contradicting_attributes
+    - Score distribution: avg_pair_score, min_pair_score, max_pair_score
     """
     analytics = {
         'total_pairs': 0,
-        'pairs_with_evidence': 0,
-        'pairs_blocked': 0,
         'unique_attributes': 0,
         'total_attribute_instances': 0,
         'fully_matching_attributes': 0,
         'contradicting_attributes': 0,
-        'non_matching_pairs': 0,  # <=70%
-        'ok_pairs': 0,            # 70-90%
-        'matching_pairs': 0,      # >90%
         'avg_pair_score': 0.0,
         'min_pair_score': 1.0,
         'max_pair_score': 0.0
@@ -532,24 +527,7 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
     for party1_id, party2_id in combinations(party_ids, 2):
         analytics['total_pairs'] += 1
         
-        # Check if pair has match evidence
-        evidence = match_evidence_df[
-            (((match_evidence_df['party_id_1'] == party1_id) & (match_evidence_df['party_id_2'] == party2_id)) |
-             ((match_evidence_df['party_id_1'] == party2_id) & (match_evidence_df['party_id_2'] == party1_id)))
-        ]
-        if len(evidence) > 0:
-            analytics['pairs_with_evidence'] += 1
-        
-        # Check if pair has hard block
-        differences = difference_evidence_df[
-            (((difference_evidence_df['party_id_1'] == party1_id) & (difference_evidence_df['party_id_2'] == party2_id)) |
-             ((difference_evidence_df['party_id_1'] == party2_id) & (difference_evidence_df['party_id_2'] == party1_id))) &
-            (difference_evidence_df['is_hard_block'] == True)
-        ]
-        if len(differences) > 0:
-            analytics['pairs_blocked'] += 1
-        
-        # Compute attribute-level match score
+        # Compute attribute-level match score for this pair
         attrs1 = party_attr_map.get(party1_id, {})
         attrs2 = party_attr_map.get(party2_id, {})
         
@@ -558,18 +536,8 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
         
         if len(common_attrs) > 0:
             matching = sum(1 for attr in common_attrs if attrs1[attr] == attrs2[attr])
-            contradicting = sum(1 for attr in common_attrs if attrs1[attr] != attrs2[attr])
-            
             pair_score = matching / len(common_attrs)
             pair_scores.append(pair_score)
-            
-            # Categorize pair quality
-            if pair_score <= 0.70:
-                analytics['non_matching_pairs'] += 1
-            elif pair_score <= 0.90:
-                analytics['ok_pairs'] += 1
-            else:
-                analytics['matching_pairs'] += 1
     
     # Compute aggregate pair scores
     if pair_scores:
@@ -615,15 +583,10 @@ def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, 
             'master_entity_id': entity_id,
             'party_count': len(party_ids),
             'total_pairs': analytics['total_pairs'],
-            'pairs_with_evidence': analytics['pairs_with_evidence'],
-            'pairs_blocked': analytics['pairs_blocked'],
             'unique_attributes': analytics['unique_attributes'],
             'total_attribute_instances': analytics['total_attribute_instances'],
             'fully_matching_attributes': analytics['fully_matching_attributes'],
             'contradicting_attributes': analytics['contradicting_attributes'],
-            'non_matching_pairs': analytics['non_matching_pairs'],
-            'ok_pairs': analytics['ok_pairs'],
-            'matching_pairs': analytics['matching_pairs'],
             'avg_pair_score': round(analytics['avg_pair_score'], 4),
             'min_pair_score': round(analytics['min_pair_score'], 4),
             'max_pair_score': round(analytics['max_pair_score'], 4),
@@ -637,18 +600,96 @@ def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, 
     return pd.DataFrame(master_entities)
 
 
-def generate_party_to_entity_links(resolved_entities):
-    """Generate PARTY_TO_ENTITY_LINK table (SCD2)"""
+def generate_party_to_entity_links(resolved_entities, entity_graph, match_evidence_df, 
+                                    difference_evidence_df, relationships_df,
+                                    evidence_rules_df, metadata_relationship_df):
+    """Generate PARTY_TO_ENTITY_LINK table with actual scoring information"""
     links = []
     
     for entity_id, party_ids in resolved_entities.items():
         for party_id in party_ids:
+            # For singleton entities
+            if len(party_ids) == 1:
+                links.append({
+                    'link_id': str(uuid.uuid4()),
+                    'party_id': party_id,
+                    'master_entity_id': entity_id,
+                    'link_type': 'SINGLETON',
+                    'link_decision': 'SINGLETON',
+                    'confidence_score': 1.0,
+                    'avg_score_with_peers': None,
+                    'best_score_with_peer': None,
+                    'num_matches': 0,
+                    'num_differences': 0,
+                    'num_hard_blocks': 0,
+                    'created_at': datetime.now().isoformat(),
+                    'rec_start_date': datetime.now().isoformat(),
+                    'rec_end_date': None,
+                    'is_current': True
+                })
+                continue
+            
+            # For multi-party entities: compute scores with all peers
+            peer_scores = []
+            peer_decisions = []
+            num_matches = 0
+            num_differences = 0
+            num_hard_blocks = 0
+            
+            for peer_id in party_ids:
+                if peer_id == party_id:
+                    continue
+                
+                # Compute score with this peer
+                decision, score, reason = compute_pair_score(
+                    party_id, peer_id, match_evidence_df, difference_evidence_df,
+                    relationships_df, evidence_rules_df, metadata_relationship_df
+                )
+                
+                peer_scores.append(score)
+                peer_decisions.append(decision)
+                
+                # Count evidence
+                pair_matches = match_evidence_df[
+                    (((match_evidence_df['party_id_1'] == party_id) & (match_evidence_df['party_id_2'] == peer_id)) |
+                     ((match_evidence_df['party_id_1'] == peer_id) & (match_evidence_df['party_id_2'] == party_id)))
+                ]
+                num_matches += len(pair_matches)
+                
+                pair_diffs = difference_evidence_df[
+                    (((difference_evidence_df['party_id_1'] == party_id) & (difference_evidence_df['party_id_2'] == peer_id)) |
+                     ((difference_evidence_df['party_id_1'] == peer_id) & (difference_evidence_df['party_id_2'] == party_id)))
+                ]
+                num_differences += len(pair_diffs)
+                num_hard_blocks += len(pair_diffs[pair_diffs['is_hard_block'] == True])
+            
+            # Determine primary link decision
+            if 'MUST_MERGE' in peer_decisions:
+                link_decision = 'MUST_MERGE'
+                link_type = 'HARD_LINK'
+            elif 'MERGE' in peer_decisions:
+                link_decision = 'MERGE'
+                link_type = 'SCORED'
+            else:
+                link_decision = 'UNKNOWN'
+                link_type = 'MATCH_EVIDENCE'
+            
+            # Calculate aggregate confidence
+            avg_score = sum(peer_scores) / len(peer_scores) if peer_scores else 0.0
+            best_score = max(peer_scores) if peer_scores else 0.0
+            
             links.append({
                 'link_id': str(uuid.uuid4()),
                 'party_id': party_id,
                 'master_entity_id': entity_id,
-                'link_type': 'MATCH_EVIDENCE',
-                'confidence_score': 1.0,  # TODO: Calculate aggregate confidence
+                'link_type': link_type,
+                'link_decision': link_decision,
+                'confidence_score': round(best_score, 4),  # Best score with any peer
+                'avg_score_with_peers': round(avg_score, 4),
+                'best_score_with_peer': round(best_score, 4),
+                'num_matches': num_matches,
+                'num_differences': num_differences,
+                'num_hard_blocks': num_hard_blocks,
                 'created_at': datetime.now().isoformat(),
                 'rec_start_date': datetime.now().isoformat(),
                 'rec_end_date': None,
@@ -703,7 +744,10 @@ def main():
     master_entity_df = generate_master_entities(
         entities, std_attr_df, match_evidence_df, difference_evidence_df
     )
-    party_link_df = generate_party_to_entity_links(entities)
+    party_link_df = generate_party_to_entity_links(
+        entities, entity_graph, match_evidence_df, difference_evidence_df,
+        relationships_df, evidence_rules_df, metadata_relationship_df
+    )
     
     print(f"\n  Verification: {len(party_link_df)} party-to-entity links for {len(parties_with_attrs)} parties with attributes")
     if len(party_link_df) != len(parties_with_attrs):
