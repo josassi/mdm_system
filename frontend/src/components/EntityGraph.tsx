@@ -67,35 +67,22 @@ export default function EntityGraph({
 
     const newEdges: Edge[] = []
 
-    const calculateMatchPercentage = (p1Id: string, p2Id: string) => {
-      const p1 = parties.find(p => p.party_id === p1Id)
-      const p2 = parties.find(p => p.party_id === p2Id)
-      if (!p1 || !p2) return { match: 0, total: 0 }
-
-      const p1AttrTypes = new Set(p1.attributes.map(a => a.attribute_type))
-      const p2AttrTypes = new Set(p2.attributes.map(a => a.attribute_type))
-      const commonTypes = Array.from(p1AttrTypes).filter(t => p2AttrTypes.has(t))
-
-      const matches = commonTypes.filter(type => {
-        const v1 = p1.attributes.find(a => a.attribute_type === type)?.standardized_value
-        const v2 = p2.attributes.find(a => a.attribute_type === type)?.standardized_value
-        return v1 && v2 && v1 === v2
-      }).length
-
-      return { match: matches, total: commonTypes.length }
-    }
-
     matchEvidence.forEach(evidence => {
-      const { match, total } = calculateMatchPercentage(evidence.party_id_1, evidence.party_id_2)
-      const matchPct = total > 0 ? (match / total) * 100 : 0
-      const mismatchPct = total > 0 ? ((total - match) / total) * 100 : 0
+      // Get counts from API
+      const numMatches = evidence.num_matches ?? 0
+      const numDifferences = evidence.num_differences ?? 0
+      const totalCompared = numMatches + numDifferences
+      
+      // Calculate percentages from counts (these will add up to 100%)
+      const matchPct = totalCompared > 0 ? (numMatches / totalCompared) * 100 : 0
+      const mismatchPct = totalCompared > 0 ? (numDifferences / totalCompared) * 100 : 0
 
       // Determine source and target based on x position (left to right)
       const node1 = newNodes.find(n => n.id === evidence.party_id_1)
       const node2 = newNodes.find(n => n.id === evidence.party_id_2)
       const isNode1Left = node1 && node2 && node1.position.x < node2.position.x
       
-      // Color based on match percentage: green (100%), orange (<100%), red (<50%)
+      // Color based on match percentage: green (>=90%), yellow (70-89%), orange (50-69%), red (<50%)
       let strokeColor = '#10b981' // green
       let labelColor = '#059669'
       let labelBgColor = '#d1fae5'
@@ -104,10 +91,14 @@ export default function EntityGraph({
         strokeColor = '#ef4444' // red
         labelColor = '#dc2626'
         labelBgColor = '#fee2e2'
-      } else if (matchPct < 100) {
+      } else if (matchPct < 70) {
         strokeColor = '#f97316' // orange
         labelColor = '#ea580c'
         labelBgColor = '#ffedd5'
+      } else if (matchPct < 90) {
+        strokeColor = '#eab308' // yellow
+        labelColor = '#ca8a04'
+        labelBgColor = '#fef9c3'
       }
       
       newEdges.push({
@@ -125,11 +116,7 @@ export default function EntityGraph({
     })
 
     blocking.forEach(block => {
-      const { match, total } = calculateMatchPercentage(block.party_id_1, block.party_id_2)
-      const matchPct = total > 0 ? (match / total) * 100 : 0
-      const mismatchPct = total > 0 ? ((total - match) / total) * 100 : 0
-
-      // Determine source and target based on x position (left to right)
+      // Blocking pairs show conflict - red dashed line with "BLOCKED" label
       const node1 = newNodes.find(n => n.id === block.party_id_1)
       const node2 = newNodes.find(n => n.id === block.party_id_2)
       const isNode1Left = node1 && node2 && node1.position.x < node2.position.x
@@ -145,7 +132,7 @@ export default function EntityGraph({
           strokeWidth: 3,
           strokeDasharray: '5,5'
         },
-        label: `✓${matchPct.toFixed(0)}% ✗${mismatchPct.toFixed(0)}%`,
+        label: `BLOCKED`,
         labelStyle: { fill: '#dc2626', fontSize: 9, fontWeight: 700 },
         labelBgStyle: { fill: '#fee2e2', fillOpacity: 0.95 },
         data: { party1Id: block.party_id_1, party2Id: block.party_id_2 },

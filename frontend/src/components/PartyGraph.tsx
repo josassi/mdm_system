@@ -50,39 +50,6 @@ export default function PartyGraph({
   const simulationRef = useRef<any>(null)
   const isDraggingRef = useRef<Set<string>>(new Set())
 
-  const calculateMatchPercentage = useCallback((partyId1: string, partyId2: string) => {
-    const party1 = parties.find(p => p.party_id === partyId1)
-    const party2 = parties.find(p => p.party_id === partyId2)
-    
-    if (!party1 || !party2) return { match: 0, total: 0 }
-
-    const attrs1 = new Map(
-      party1.attributes
-        .filter(a => !['ATTR_GOV_ID_TYPE', 'ATTR_RELATIONSHIP_TYPE', 'ATTR_GENDER'].includes(a.attribute_type))
-        .map(a => [a.attribute_type, a.standardized_value.toLowerCase()])
-    )
-    const attrs2 = new Map(
-      party2.attributes
-        .filter(a => !['ATTR_GOV_ID_TYPE', 'ATTR_RELATIONSHIP_TYPE', 'ATTR_GENDER'].includes(a.attribute_type))
-        .map(a => [a.attribute_type, a.standardized_value.toLowerCase()])
-    )
-
-    const allKeys = new Set([...attrs1.keys(), ...attrs2.keys()])
-    let match = 0
-    let total = 0
-
-    allKeys.forEach(key => {
-      if (attrs1.has(key) && attrs2.has(key)) {
-        total++
-        if (attrs1.get(key) === attrs2.get(key)) {
-          match++
-        }
-      }
-    })
-
-    return { match, total }
-  }, [parties])
-
   useEffect(() => {
     const newEdges: Edge[] = []
 
@@ -195,7 +162,7 @@ export default function PartyGraph({
         simulationRef.current.stop()
       }
     }
-  }, [parties, matchEvidence, blocking, relationships, focusPartyId, selectedPartyId, onPartySelect, calculateMatchPercentage, setNodes, setEdges])
+  }, [parties, matchEvidence, blocking, relationships, focusPartyId, selectedPartyId, onPartySelect, setNodes, setEdges])
 
   // Handle node drag events to update simulation
   const handleNodesChange = useCallback((changes: NodeChange[]) => {

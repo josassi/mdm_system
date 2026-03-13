@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeftIcon, ShieldExclamationIcon } from '@heroicons/react/24/outline'
 import { entityApi } from '../api/client'
@@ -12,6 +12,7 @@ import PartyAttributeTable from '../components/PartyAttributeTable'
 
 export default function EntityDetail() {
   const { entityId } = useParams<{ entityId: string }>()
+  const navigate = useNavigate()
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'evidence' | 'blocking'>('graph')
 
@@ -39,19 +40,19 @@ export default function EntityDetail() {
           <ShieldExclamationIcon className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Entity</h3>
           <p className="text-gray-600">Unable to load entity details.</p>
-          <Link to="/" className="btn-primary mt-4 inline-block">
-            Back to Entities
-          </Link>
+          <button onClick={() => navigate(-1)} className="btn-primary mt-4 inline-block">
+            Back to Previous Page
+          </button>
         </div>
       </div>
     )
   }
 
   const selectedParty = selectedPartyId 
-    ? entityDetail.parties.find(p => p.party_id === selectedPartyId)
+    ? entityDetail.parties?.find(p => p.party_id === selectedPartyId)
     : null
 
-  const hasConflicts = entityDetail.blocking.length > 0
+  const hasConflicts = (entityDetail.blocking?.length ?? 0) > 0
 
   return (
     <div className="h-screen flex flex-col">
@@ -59,16 +60,19 @@ export default function EntityDetail() {
         <div className="max-w-full mx-auto">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Link to="/" className="text-gray-500 hover:text-gray-700">
+              <button 
+                onClick={() => navigate(-1)} 
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+              >
                 <ArrowLeftIcon className="h-5 w-5" />
-              </Link>
+              </button>
               <div>
                 <h1 className="text-sm font-bold text-gray-900">
                   Entity {entityId?.substring(0, 12)}
                 </h1>
                 <p className="text-xs text-gray-500">
-                  {entityDetail.parties.length} parties • {entityDetail.match_evidence.length} evidence
-                  {hasConflicts && <span className="text-red-600"> • {entityDetail.blocking.length} conflicts</span>}
+                  {entityDetail.parties?.length ?? 0} parties • {entityDetail.match_evidence?.length ?? 0} evidence
+                  {hasConflicts && <span className="text-red-600"> • {entityDetail.blocking?.length ?? 0} conflicts</span>}
                 </p>
               </div>
             </div>
@@ -112,7 +116,7 @@ export default function EntityDetail() {
                 activeTab === 'evidence' ? 'bg-primary-600 text-white' : ''
               }`}
             >
-              Evidence ({entityDetail.match_evidence.length})
+              Evidence ({entityDetail.match_evidence?.length ?? 0})
             </button>
             <button
               onClick={() => setActiveTab('blocking')}
@@ -120,7 +124,7 @@ export default function EntityDetail() {
                 activeTab === 'blocking' ? 'bg-red-600 text-white' : hasConflicts ? 'bg-red-100 text-red-700' : ''
               }`}
             >
-              Blocking ({entityDetail.blocking.length})
+              Blocking ({entityDetail.blocking?.length ?? 0})
             </button>
           </div>
         </div>
@@ -132,33 +136,33 @@ export default function EntityDetail() {
             <div className="flex-1 card overflow-hidden flex flex-col">
               {activeTab === 'graph' && (
                 <EntityGraph
-                  parties={entityDetail.parties}
-                  matchEvidence={entityDetail.match_evidence}
-                  blocking={entityDetail.blocking}
-                  relationships={entityDetail.relationships}
+                  parties={entityDetail.parties ?? []}
+                  matchEvidence={entityDetail.match_evidence ?? []}
+                  blocking={entityDetail.blocking ?? []}
+                  relationships={entityDetail.relationships ?? []}
                   selectedPartyId={selectedPartyId}
                   onPartySelect={setSelectedPartyId}
                 />
               )}
               {activeTab === 'attributes' && (
                 <AttributeTable
-                  parties={entityDetail.parties}
+                  parties={entityDetail.parties ?? []}
                 />
               )}
               {activeTab === 'parties' && (
                 <PartyAttributeTable
-                  parties={entityDetail.parties}
+                  parties={entityDetail.parties ?? []}
                 />
               )}
               {activeTab === 'evidence' && (
                 <EvidencePanel
-                  evidence={entityDetail.match_evidence}
+                  evidence={entityDetail.match_evidence ?? []}
                 />
               )}
               {activeTab === 'blocking' && (
                 <BlockingPanel
-                  blocking={entityDetail.blocking}
-                  parties={entityDetail.parties}
+                  blocking={entityDetail.blocking ?? []}
+                  parties={entityDetail.parties ?? []}
                 />
               )}
             </div>

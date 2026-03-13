@@ -289,13 +289,17 @@ export default function EntityList() {
                   </span>
                 </td>
                 <td className="text-center">
-                  <span className={`font-semibold ${
-                    (entity.avg_pair_score ?? 0) >= 0.9 ? 'text-green-600' :
-                    (entity.avg_pair_score ?? 0) >= 0.7 ? 'text-yellow-600' :
-                    'text-red-600'
-                  }`}>
-                    {((entity.avg_pair_score ?? 0) * 100).toFixed(0)}%
-                  </span>
+                  {entity.avg_pair_score === null || entity.avg_pair_score === undefined ? (
+                    <span className="text-gray-400 text-sm">N/A</span>
+                  ) : (
+                    <span className={`font-semibold ${
+                      entity.avg_pair_score >= 0.9 ? 'text-green-600' :
+                      entity.avg_pair_score >= 0.7 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      {(entity.avg_pair_score * 100).toFixed(0)}%
+                    </span>
+                  )}
                 </td>
                 <td className="text-xs text-gray-500">{new Date(entity.updated_at).toLocaleDateString()}</td>
                 <td className="text-center">

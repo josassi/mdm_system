@@ -60,6 +60,9 @@ export interface MatchEvidence {
   evidence_value: string
   confidence_score: number
   created_at: string
+  match_score?: number
+  num_matches?: number
+  num_differences?: number
 }
 
 export interface Blocking {

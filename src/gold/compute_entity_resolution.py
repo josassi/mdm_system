@@ -622,6 +622,7 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                     'num_matches': 0,
                     'num_differences': 0,
                     'num_hard_blocks': 0,
+                    'attribute_match_ratio': None,
                     'created_at': datetime.now().isoformat(),
                     'rec_start_date': datetime.now().isoformat(),
                     'rec_end_date': None,
@@ -678,6 +679,10 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
             avg_score = sum(peer_scores) / len(peer_scores) if peer_scores else 0.0
             best_score = max(peer_scores) if peer_scores else 0.0
             
+            # Calculate attribute match ratio (data quality indicator)
+            total_evidence = num_matches + num_differences
+            attribute_match_ratio = num_matches / total_evidence if total_evidence > 0 else None
+            
             links.append({
                 'link_id': str(uuid.uuid4()),
                 'party_id': party_id,
@@ -690,6 +695,7 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                 'num_matches': num_matches,
                 'num_differences': num_differences,
                 'num_hard_blocks': num_hard_blocks,
+                'attribute_match_ratio': round(attribute_match_ratio, 4) if attribute_match_ratio is not None else None,
                 'created_at': datetime.now().isoformat(),
                 'rec_start_date': datetime.now().isoformat(),
                 'rec_end_date': None,

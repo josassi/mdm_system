@@ -28,6 +28,7 @@ def load_data():
         'relationship': pd.read_csv(bronze_dir / 'relationship.csv'),
         'standardized_attribute': pd.read_csv(silver_dir / 'standardized_attribute.csv'),
         'match_evidence': pd.read_csv(silver_dir / 'match_evidence.csv'),
+        'difference_evidence': pd.read_csv(silver_dir / 'difference_evidence.csv'),
         'match_blocking': pd.read_csv(silver_dir / 'match_blocking.csv'),
         'party_cluster': pd.read_csv(silver_dir / 'party_cluster.csv'),
         'master_entity': pd.read_csv(gold_dir / 'master_entity.csv'),
@@ -110,6 +111,9 @@ def get_entities():
                             'reason': blocking.iloc[0]['blocking_reason_code']
                         })
             
+            # Single-party entities have no pairs to compare, so scores should be null
+            is_single_party = len(party_ids) == 1
+            
             entities_list.append({
                 'entity_id': entity_id,
                 'primary_name': primary_name or 'Unknown',
@@ -121,20 +125,16 @@ def get_entities():
                 'resolution_score': float(linked_parties['confidence_score'].mean()) if len(linked_parties) > 0 else 0,
                 'created_at': entity['created_at'],
                 'updated_at': entity['updated_at'],
-                # Analytics from master_entity
+                # Analytics from master_entity - only columns that actually exist
                 'total_pairs': int(entity['total_pairs']) if pd.notna(entity.get('total_pairs')) else 0,
-                'pairs_with_evidence': int(entity['pairs_with_evidence']) if pd.notna(entity.get('pairs_with_evidence')) else 0,
-                'pairs_blocked': int(entity['pairs_blocked']) if pd.notna(entity.get('pairs_blocked')) else 0,
                 'unique_attributes': int(entity['unique_attributes']) if pd.notna(entity.get('unique_attributes')) else 0,
                 'total_attribute_instances': int(entity['total_attribute_instances']) if pd.notna(entity.get('total_attribute_instances')) else 0,
                 'fully_matching_attributes': int(entity['fully_matching_attributes']) if pd.notna(entity.get('fully_matching_attributes')) else 0,
                 'contradicting_attributes': int(entity['contradicting_attributes']) if pd.notna(entity.get('contradicting_attributes')) else 0,
-                'non_matching_pairs': int(entity['non_matching_pairs']) if pd.notna(entity.get('non_matching_pairs')) else 0,
-                'ok_pairs': int(entity['ok_pairs']) if pd.notna(entity.get('ok_pairs')) else 0,
-                'matching_pairs': int(entity['matching_pairs']) if pd.notna(entity.get('matching_pairs')) else 0,
-                'avg_pair_score': float(entity['avg_pair_score']) if pd.notna(entity.get('avg_pair_score')) else 0,
-                'min_pair_score': float(entity['min_pair_score']) if pd.notna(entity.get('min_pair_score')) else 0,
-                'max_pair_score': float(entity['max_pair_score']) if pd.notna(entity.get('max_pair_score')) else 0,
+                # For single-party entities, scores are null (no pairs to compare)
+                'avg_pair_score': None if is_single_party else (float(entity['avg_pair_score']) if pd.notna(entity.get('avg_pair_score')) else 0),
+                'min_pair_score': None if is_single_party else (float(entity['min_pair_score']) if pd.notna(entity.get('min_pair_score')) else 0),
+                'max_pair_score': None if is_single_party else (float(entity['max_pair_score']) if pd.notna(entity.get('max_pair_score')) else 0),
             })
         except Exception as e:
             print(f"Error processing entity {entity_id} at index {idx}: {e}")
@@ -161,16 +161,26 @@ def get_entity_detail(entity_id):
     ]
     
     party_ids = linked_parties['party_id'].tolist()
+    print(f"DEBUG: Entity {entity_id} has party_ids: {party_ids}")
     
     # Build party details
     parties = []
     for party_id in party_ids:
-        party_info = get_party_info(party_id)
-        link_info = linked_parties[linked_parties['party_id'] == party_id].iloc[0]
-        party_info['link_confidence'] = float(link_info['confidence_score'])
-        party_info['resolution_method'] = link_info['link_type']
-        party_info['resolution_score'] = float(link_info['confidence_score'])
-        parties.append(party_info)
+        try:
+            party_info = get_party_info(party_id)
+            if party_info is None:
+                print(f"Warning: Party {party_id} not found in source_party table")
+                continue
+            link_info = linked_parties[linked_parties['party_id'] == party_id].iloc[0]
+            party_info['link_confidence'] = float(link_info['confidence_score'])
+            party_info['resolution_method'] = link_info['link_type']
+            party_info['resolution_score'] = float(link_info['confidence_score'])
+            parties.append(party_info)
+        except Exception as e:
+            print(f"Error processing party {party_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
     
     # Get match evidence between parties
     evidence = get_match_evidence_for_parties(party_ids)
@@ -180,6 +190,8 @@ def get_entity_detail(entity_id):
     
     # Get relationships
     relationships = get_relationships_for_parties(party_ids)
+    
+    print(f"DEBUG: Returning {len(parties)} parties, {len(evidence)} evidence, {len(blocking)} blocking")
     
     return jsonify({
         'entity_id': entity_id,
@@ -293,6 +305,8 @@ def get_party_info(party_id):
     party = data['source_party'][data['source_party']['source_party_id'] == party_id]
     
     if len(party) == 0:
+        print(f"DEBUG: Party {party_id} not found in source_party table")
+        print(f"DEBUG: Available party IDs sample: {data['source_party']['source_party_id'].head().tolist()}")
         return None
     
     party = party.iloc[0]
@@ -396,19 +410,41 @@ def get_source_systems(party_ids):
 
 
 def get_match_evidence_for_parties(party_ids):
-    """Get all match evidence between a set of parties"""
+    """Get all match evidence between a set of parties with pairwise match scores"""
     evidence_list = []
     
+    # Calculate pairwise scores from actual evidence
     for i, party1 in enumerate(party_ids):
         for party2 in party_ids[i+1:]:
-            evidence = data['match_evidence'][
+            pair_key = tuple(sorted([party1, party2]))
+            
+            # Get match evidence for this pair
+            match_evidence = data['match_evidence'][
                 (((data['match_evidence']['party_id_1'] == party1) & 
                   (data['match_evidence']['party_id_2'] == party2)) |
                  ((data['match_evidence']['party_id_1'] == party2) & 
                   (data['match_evidence']['party_id_2'] == party1)))
             ]
             
-            for _, ev in evidence.iterrows():
+            # Get difference evidence for this pair
+            diff_evidence = data['difference_evidence'][
+                (((data['difference_evidence']['party_id_1'] == party1) & 
+                  (data['difference_evidence']['party_id_2'] == party2)) |
+                 ((data['difference_evidence']['party_id_1'] == party2) & 
+                  (data['difference_evidence']['party_id_2'] == party1)))
+            ]
+            
+            # Count matches and differences
+            num_matches = len(match_evidence)
+            num_differences = len(diff_evidence)
+            
+            # Calculate pairwise match score (simple ratio for now)
+            # This represents the proportion of compared attributes that match
+            total_compared = num_matches + num_differences
+            match_score = num_matches / total_compared if total_compared > 0 else 0.0
+            
+            # Add scores to each evidence record for this pair
+            for _, ev in match_evidence.iterrows():
                 evidence_list.append({
                     'evidence_id': ev['evidence_id'],
                     'party_id_1': ev['party_id_1'],
@@ -418,7 +454,11 @@ def get_match_evidence_for_parties(party_ids):
                     'match_key': ev['match_key'],
                     'evidence_value': ev['evidence_value'],
                     'confidence_score': float(ev['confidence_score']),
-                    'created_at': ev['created_at']
+                    'created_at': ev['created_at'],
+                    # Add pairwise scores calculated from evidence
+                    'match_score': match_score,
+                    'num_matches': num_matches,
+                    'num_differences': num_differences
                 })
     
     return evidence_list
@@ -612,12 +652,30 @@ def get_dashboard_stats():
         
         # Conflict statistics
         total_blocking_pairs = len(data['match_blocking'][data['match_blocking']['is_active'] == True])
-        entities_with_conflicts = len(entities_df[entities_df['pairs_blocked'] > 0])
         entities_with_contradictions = len(entities_df[entities_df['contradicting_attributes'] > 0])
         
         # Match evidence statistics
         total_match_evidence = len(data['match_evidence'])
-        avg_match_evidence_per_entity = entities_df['pairs_with_evidence'].mean()
+        # Calculate avg match evidence per entity from match_evidence table
+        evidence_by_entity = {}
+        for entity_id in entities_df['master_entity_id']:
+            entity_parties = data['party_to_entity_link'][
+                data['party_to_entity_link']['master_entity_id'] == entity_id
+            ]['party_id'].tolist()
+            
+            evidence_count = 0
+            for i, p1 in enumerate(entity_parties):
+                for p2 in entity_parties[i+1:]:
+                    pair_evidence = data['match_evidence'][
+                        (((data['match_evidence']['party_id_1'] == p1) & 
+                          (data['match_evidence']['party_id_2'] == p2)) |
+                         ((data['match_evidence']['party_id_1'] == p2) & 
+                          (data['match_evidence']['party_id_2'] == p1)))
+                    ]
+                    evidence_count += len(pair_evidence)
+            evidence_by_entity[entity_id] = evidence_count
+        
+        avg_match_evidence_per_entity = sum(evidence_by_entity.values()) / len(evidence_by_entity) if evidence_by_entity else 0
         
         # Relationship statistics (active relationships have no end date)
         relationships_df = data['relationship']
@@ -627,8 +685,9 @@ def get_dashboard_stats():
         total_attributes = len(data['standardized_attribute'])
         unique_attribute_types = std_attrs_with_type['attribute_type'].nunique()
         
-        # Quality metrics
-        avg_entity_match_score = entities_df['avg_pair_score'].mean()
+        # Quality metrics (exclude single-party entities from score averages)
+        multi_party_entities = entities_df[entities_df['party_count'] > 1]
+        avg_entity_match_score = multi_party_entities['avg_pair_score'].mean() if len(multi_party_entities) > 0 else 0
         avg_unique_attrs_per_entity = entities_df['unique_attributes'].mean()
         avg_contradicting_attrs = entities_df['contradicting_attributes'].mean()
         
@@ -654,7 +713,6 @@ def get_dashboard_stats():
             'entity_size_distribution': entity_size_distribution,
             'conflicts': {
                 'total_blocking_pairs': int(total_blocking_pairs),
-                'entities_with_conflicts': int(entities_with_conflicts),
                 'entities_with_contradictions': int(entities_with_contradictions)
             },
             'quality_metrics': {
