@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeftIcon, ShieldExclamationIcon } from '@heroicons/react/24/outline'
 import { entityApi } from '../api/client'

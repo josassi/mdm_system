@@ -19,6 +19,10 @@ type SortDirection = 'asc' | 'desc'
 export default function EntityList() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterConflicts, setFilterConflicts] = useState<'all' | 'with-conflicts' | 'no-conflicts'>('all')
+  const [hideSingleParties, setHideSingleParties] = useState(false)
+  const [minParties, setMinParties] = useState<number | ''>('')
+  const [maxParties, setMaxParties] = useState<number | ''>('')
+  const [minScore, setMinScore] = useState<number | ''>('')
   const [sortField, setSortField] = useState<SortField>(() => {
     const saved = localStorage.getItem('entityListSortField')
     return (saved as SortField) || 'entity_id'
@@ -60,12 +64,21 @@ export default function EntityList() {
       entity.primary_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       entity.entity_id.toLowerCase().includes(searchQuery.toLowerCase())
     
-    const matchesFilter = 
+    const matchesConflictFilter = 
       filterConflicts === 'all' ||
       (filterConflicts === 'with-conflicts' && entity.has_conflicts) ||
       (filterConflicts === 'no-conflicts' && !entity.has_conflicts)
     
-    return matchesSearch && matchesFilter
+    const matchesSinglePartyFilter = !hideSingleParties || entity.party_count > 1
+    
+    const matchesMinParties = minParties === '' || entity.party_count >= minParties
+    const matchesMaxParties = maxParties === '' || entity.party_count <= maxParties
+    
+    const matchesMinScore = minScore === '' || 
+      (entity.avg_pair_score !== null && entity.avg_pair_score !== undefined && entity.avg_pair_score >= minScore / 100)
+    
+    return matchesSearch && matchesConflictFilter && matchesSinglePartyFilter && 
+           matchesMinParties && matchesMaxParties && matchesMinScore
   }).sort((a, b) => {
     let aVal: any = a[sortField]
     let bVal: any = b[sortField]
@@ -201,6 +214,65 @@ export default function EntityList() {
               Clean
             </button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 items-center text-xs">
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={hideSingleParties}
+              onChange={(e) => setHideSingleParties(e.target.checked)}
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-gray-700">Hide single parties</span>
+          </label>
+
+          <div className="flex items-center gap-1">
+            <span className="text-gray-600">Parties:</span>
+            <input
+              type="number"
+              placeholder="Min"
+              value={minParties}
+              onChange={(e) => setMinParties(e.target.value ? parseInt(e.target.value) : '')}
+              className="input w-16 text-xs px-1 py-0.5"
+              min="1"
+            />
+            <span className="text-gray-500">-</span>
+            <input
+              type="number"
+              placeholder="Max"
+              value={maxParties}
+              onChange={(e) => setMaxParties(e.target.value ? parseInt(e.target.value) : '')}
+              className="input w-16 text-xs px-1 py-0.5"
+              min="1"
+            />
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span className="text-gray-600">Min Score:</span>
+            <input
+              type="number"
+              placeholder="0-100"
+              value={minScore}
+              onChange={(e) => setMinScore(e.target.value ? parseInt(e.target.value) : '')}
+              className="input w-16 text-xs px-1 py-0.5"
+              min="0"
+              max="100"
+            />
+            <span className="text-gray-500 text-xs">%</span>
+          </div>
+
+          <button
+            onClick={() => {
+              setHideSingleParties(false)
+              setMinParties('')
+              setMaxParties('')
+              setMinScore('')
+            }}
+            className="btn-secondary text-xs px-2 py-0.5"
+          >
+            Clear Filters
+          </button>
         </div>
       </div>
 

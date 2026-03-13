@@ -39,6 +39,12 @@ export default function EntityGraph({
   const [selectedEdge, setSelectedEdge] = useState<{ party1: Party, party2: Party } | null>(null)
 
   useEffect(() => {
+    if (!parties || parties.length === 0) {
+      setNodes([])
+      setEdges([])
+      return
+    }
+    
     const newNodes: Node[] = parties.map((party, index) => {
       const angle = (2 * Math.PI * index) / parties.length
       const radius = Math.max(200, parties.length * 50)

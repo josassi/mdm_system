@@ -161,7 +161,6 @@ def get_entity_detail(entity_id):
     ]
     
     party_ids = linked_parties['party_id'].tolist()
-    print(f"DEBUG: Entity {entity_id} has party_ids: {party_ids}")
     
     # Build party details
     parties = []
@@ -169,7 +168,6 @@ def get_entity_detail(entity_id):
         try:
             party_info = get_party_info(party_id)
             if party_info is None:
-                print(f"Warning: Party {party_id} not found in source_party table")
                 continue
             link_info = linked_parties[linked_parties['party_id'] == party_id].iloc[0]
             party_info['link_confidence'] = float(link_info['confidence_score'])
@@ -177,9 +175,6 @@ def get_entity_detail(entity_id):
             party_info['resolution_score'] = float(link_info['confidence_score'])
             parties.append(party_info)
         except Exception as e:
-            print(f"Error processing party {party_id}: {e}")
-            import traceback
-            traceback.print_exc()
             continue
     
     # Get match evidence between parties
@@ -190,8 +185,6 @@ def get_entity_detail(entity_id):
     
     # Get relationships
     relationships = get_relationships_for_parties(party_ids)
-    
-    print(f"DEBUG: Returning {len(parties)} parties, {len(evidence)} evidence, {len(blocking)} blocking")
     
     return jsonify({
         'entity_id': entity_id,
@@ -305,8 +298,6 @@ def get_party_info(party_id):
     party = data['source_party'][data['source_party']['source_party_id'] == party_id]
     
     if len(party) == 0:
-        print(f"DEBUG: Party {party_id} not found in source_party table")
-        print(f"DEBUG: Available party IDs sample: {data['source_party']['source_party_id'].head().tolist()}")
         return None
     
     party = party.iloc[0]
@@ -540,10 +531,10 @@ def get_relationships_for_parties(party_ids):
             }
         
         relationships_list.append({
-            'relationship_id': rel['party_relationship_id'],
-            'metadata_relationship_id': rel['metadata_relationship_id'],
-            'from_party_id': rel['from_party_id'],
-            'to_party_id': rel['to_party_id'],
+            'relationship_id': rel['party_relationship_id'] if pd.notna(rel.get('party_relationship_id')) else None,
+            'metadata_relationship_id': rel['metadata_relationship_id'] if pd.notna(rel.get('metadata_relationship_id')) else None,
+            'from_party_id': rel['from_party_id'] if pd.notna(rel.get('from_party_id')) else None,
+            'to_party_id': rel['to_party_id'] if pd.notna(rel.get('to_party_id')) else None,
             'from_matching_value': rel.get('from_matching_value') if pd.notna(rel.get('from_matching_value')) else None,
             'to_matching_value': rel.get('to_matching_value') if pd.notna(rel.get('to_matching_value')) else None,
             'metadata': rel_metadata

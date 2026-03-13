@@ -8,6 +8,25 @@ const api = axios.create({
   },
 })
 
+// Add response interceptor to fix JSON parsing
+api.interceptors.response.use(
+  (response) => {
+    // If data is a string, parse it
+    if (typeof response.data === 'string') {
+      try {
+        response.data = JSON.parse(response.data)
+      } catch (e) {
+        console.error('Failed to parse JSON response:', e)
+      }
+    }
+    
+    return response
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
 export const entityApi = {
   getEntities: async (): Promise<Entity[]> => {
     const { data } = await api.get('/entities')

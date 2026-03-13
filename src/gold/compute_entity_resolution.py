@@ -72,8 +72,14 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
     """
     Compute aggregate score for a pair based on all evidence types.
     
-    Returns: (decision, score, reason)
-    decision: 'MUST_NOT_MERGE' | 'MUST_MERGE' | 'MERGE' | 'NO_MERGE'
+    Returns: (decision, score, reason, confidence_tier)
+    decision: 'MUST_NOT_MERGE' | 'MUST_MERGE' | 'MERGE' | 'NO_MERGE' | 'REVIEW_REQUIRED'
+    confidence_tier: 'HIGH' | 'MEDIUM' | 'LOW' | None
+    
+    Tiered Hard Link Logic:
+    - Tier 1 (HIGH): Hard link + attribute_match_ratio >= 0.5 → Auto-merge
+    - Tier 2 (MEDIUM): Hard link + 0.3 <= ratio < 0.5 → Auto-merge with flag
+    - Tier 3 (LOW): Hard link + ratio < 0.3 → Require steward review
     """
     # Get evidence for this pair
     pair_matches = match_evidence_df[
@@ -95,13 +101,27 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
     hard_blocks = pair_differences[pair_differences['is_hard_block'] == True]
     if len(hard_blocks) > 0:
         attr = hard_blocks.iloc[0]['attribute_subtype_id']
-        return ('MUST_NOT_MERGE', 0.0, f'Hard block: {attr}')
+        return ('MUST_NOT_MERGE', 0.0, f'Hard block: {attr}', None)
     
     # Priority 2: Hard links from match evidence (confidence=1.0)
+    # NEW: Tiered approach based on attribute support
     hard_matches = pair_matches[pair_matches['confidence_score'] == 1.0]
     if len(hard_matches) > 0:
         attr = hard_matches.iloc[0]['match_key']
-        return ('MUST_MERGE', 1.0, f'Hard link: {attr}')
+        
+        # Calculate attribute match ratio for safety check
+        total_evidence = len(pair_matches) + len(pair_differences)
+        match_ratio = len(pair_matches) / total_evidence if total_evidence > 0 else 0
+        
+        # Tier 1: High confidence (>= 50% attribute support)
+        if match_ratio >= 0.5:
+            return ('MUST_MERGE', 1.0, f'Hard link: {attr} (high confidence)', 'HIGH')
+        # Tier 2: Medium confidence (30-50% attribute support)
+        elif match_ratio >= 0.3:
+            return ('MUST_MERGE', 0.85, f'Hard link: {attr} (medium confidence - flagged)', 'MEDIUM')
+        # Tier 3: Low confidence (< 30% attribute support - needs review)
+        else:
+            return ('REVIEW_REQUIRED', 0.5, f'Hard link: {attr} but low attribute match ({match_ratio:.0%})', 'LOW')
     
     # Priority 2b: Hard links from relationships (guarantees_same_party=True, confidence=1.0)
     for _, rel in pair_relationships.iterrows():
@@ -111,7 +131,16 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
         if len(rel_meta) > 0:
             meta = rel_meta.iloc[0]
             if meta.get('guarantees_same_party') and meta.get('confidence_score') == 1.0:
-                return ('MUST_MERGE', 1.0, f'Hard link: Relationship {rel["metadata_relationship_id"]}')
+                # Apply same tiered logic for relationship hard links
+                total_evidence = len(pair_matches) + len(pair_differences)
+                match_ratio = len(pair_matches) / total_evidence if total_evidence > 0 else 0
+                
+                if match_ratio >= 0.5:
+                    return ('MUST_MERGE', 1.0, f'Hard link: Relationship {rel["metadata_relationship_id"]} (high confidence)', 'HIGH')
+                elif match_ratio >= 0.3:
+                    return ('MUST_MERGE', 0.85, f'Hard link: Relationship {rel["metadata_relationship_id"]} (medium confidence)', 'MEDIUM')
+                else:
+                    return ('REVIEW_REQUIRED', 0.5, f'Hard link: Relationship {rel["metadata_relationship_id"]} but low attribute match ({match_ratio:.0%})', 'LOW')
     
     # Priority 3: Aggregate scoring
     rules_dict = {row['attribute_subtype_id']: row for _, row in evidence_rules_df.iterrows()}
@@ -154,9 +183,9 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
     MERGE_THRESHOLD = 0.5  # Configurable
     
     if final_score >= MERGE_THRESHOLD:
-        return ('MERGE', final_score, f'Score {final_score:.2f} >= threshold')
+        return ('MERGE', final_score, f'Score {final_score:.2f} >= threshold', None)
     else:
-        return ('NO_MERGE', final_score, f'Score {final_score:.2f} < threshold')
+        return ('NO_MERGE', final_score, f'Score {final_score:.2f} < threshold', None)
 
 
 def build_candidate_entities(match_evidence_df, difference_evidence_df, relationships_df,
@@ -202,16 +231,28 @@ def build_candidate_entities(match_evidence_df, difference_evidence_df, relation
     
     # Score each pair and decide whether to create edge
     decision_stats = defaultdict(int)
+    review_required_pairs = []  # Track pairs needing steward review
     
     for party1_id, party2_id in pairs_with_evidence:
-        decision, score, reason = compute_pair_score(
+        decision, score, reason, confidence_tier = compute_pair_score(
             party1_id, party2_id, match_evidence_df, difference_evidence_df,
             relationships_df, evidence_rules_df, metadata_relationship_df
         )
         
         decision_stats[decision] += 1
         
-        # Only create edge if should merge
+        # Track pairs requiring review
+        if decision == 'REVIEW_REQUIRED':
+            review_required_pairs.append({
+                'party1_id': party1_id,
+                'party2_id': party2_id,
+                'score': score,
+                'reason': reason,
+                'confidence_tier': confidence_tier
+            })
+        
+        # Create edge for merges (both hard and scored)
+        # Note: REVIEW_REQUIRED pairs do NOT create edges - they remain separate entities
         if decision in ['MUST_MERGE', 'MERGE']:
             G.add_edge(party1_id, party2_id, weight=score, decision=decision, reason=reason)
     
@@ -224,18 +265,26 @@ def build_candidate_entities(match_evidence_df, difference_evidence_df, relation
         entity_id = f"ENTITY_{i+1:04d}"
         candidate_entities[entity_id] = sorted(list(component))
     
-    print(f"\n✓ Scoring decisions:")
+    print("\n✓ Scoring decisions:")
     print(f"  MUST_MERGE (hard links): {decision_stats.get('MUST_MERGE', 0)}")
     print(f"  MERGE (scored >= threshold): {decision_stats.get('MERGE', 0)}")
+    print(f"  REVIEW_REQUIRED (low confidence hard links): {decision_stats.get('REVIEW_REQUIRED', 0)}")
     print(f"  NO_MERGE (scored < threshold): {decision_stats.get('NO_MERGE', 0)}")
     print(f"  MUST_NOT_MERGE (hard blocks): {decision_stats.get('MUST_NOT_MERGE', 0)}")
+    
+    if review_required_pairs:
+        print(f"\n⚠️  {len(review_required_pairs)} pairs flagged for steward review:")
+        for pair in review_required_pairs[:5]:  # Show first 5
+            print(f"    - {pair['party1_id']} ↔ {pair['party2_id']}: {pair['reason']}")
+        if len(review_required_pairs) > 5:
+            print(f"    ... and {len(review_required_pairs) - 5} more")
     
     print(f"\n✓ Created {len(candidate_entities)} entities")
     print(f"  Total parties in entities: {sum(len(parties) for parties in candidate_entities.values())}")
     print(f"  Largest entity: {max(len(parties) for parties in candidate_entities.values())} parties")
     print(f"  Singleton entities: {sum(1 for parties in candidate_entities.values() if len(parties) == 1)}")
     
-    return candidate_entities, G, decision_stats
+    return candidate_entities, G, decision_stats, review_required_pairs
 
 
 def get_party_attributes(party_id, std_attr_df):
@@ -475,7 +524,7 @@ def resolve_entities_with_conflicts(candidate_entities, entity_graph, std_attr_d
     print(f"  Entities after splitting: {conflict_stats.get('entities_after_split', 0)}")
     print(f"  New transitive blocking records: {len(new_blocking_records)}")
     
-    return resolved_entities, conflict_stats, new_blocking_records
+    return resolved_entities, review_required_pairs, conflict_stats, new_blocking_records
 
 
 def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_df, difference_evidence_df):
@@ -663,6 +712,7 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                     'link_type': 'SINGLETON',
                     'link_decision': 'SINGLETON',
                     'confidence_score': 1.0,
+                    'confidence_tier': None,
                     'avg_score_with_peers': None,
                     'best_score_with_peer': None,
                     'num_matches': 0,
@@ -679,6 +729,7 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
             # For multi-party entities: compute scores with all peers
             peer_scores = []
             peer_decisions = []
+            peer_confidence_tiers = []
             num_matches = 0
             num_differences = 0
             num_hard_blocks = 0
@@ -688,13 +739,15 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                     continue
                 
                 # Compute score with this peer
-                decision, score, reason = compute_pair_score(
+                decision, score, reason, confidence_tier = compute_pair_score(
                     party_id, peer_id, match_evidence_df, difference_evidence_df,
                     relationships_df, evidence_rules_df, metadata_relationship_df
                 )
                 
                 peer_scores.append(score)
                 peer_decisions.append(decision)
+                if confidence_tier:
+                    peer_confidence_tiers.append(confidence_tier)
                 
                 # Count evidence
                 pair_matches = match_evidence_df[
@@ -710,16 +763,25 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                 num_differences += len(pair_diffs)
                 num_hard_blocks += len(pair_diffs[pair_diffs['is_hard_block'] == True])
             
-            # Determine primary link decision
+            # Determine primary link decision and confidence tier
             if 'MUST_MERGE' in peer_decisions:
                 link_decision = 'MUST_MERGE'
                 link_type = 'HARD_LINK'
+            elif 'REVIEW_REQUIRED' in peer_decisions:
+                link_decision = 'REVIEW_REQUIRED'
+                link_type = 'HARD_LINK_LOW_CONFIDENCE'
             elif 'MERGE' in peer_decisions:
                 link_decision = 'MERGE'
                 link_type = 'SCORED'
             else:
                 link_decision = 'UNKNOWN'
                 link_type = 'MATCH_EVIDENCE'
+            
+            # Determine overall confidence tier (use the lowest/most conservative)
+            confidence_tier = None
+            if peer_confidence_tiers:
+                tier_priority = {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3}
+                confidence_tier = min(peer_confidence_tiers, key=lambda t: tier_priority.get(t, 0))
             
             # Calculate aggregate confidence
             avg_score = sum(peer_scores) / len(peer_scores) if peer_scores else 0.0
@@ -736,6 +798,7 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                 'link_type': link_type,
                 'link_decision': link_decision,
                 'confidence_score': round(best_score, 4),  # Best score with any peer
+                'confidence_tier': confidence_tier,  # NEW: Tiered confidence level
                 'avg_score_with_peers': round(avg_score, 4),
                 'best_score_with_peer': round(best_score, 4),
                 'num_matches': num_matches,
@@ -787,7 +850,7 @@ def main():
     print(f"  → Creating entities only for parties with attributes")
     
     # Build entities using scoring-based clustering (only for parties with attributes)
-    entities, entity_graph, decision_stats = build_candidate_entities(
+    entities, entity_graph, decision_stats, review_required_pairs = build_candidate_entities(
         match_evidence_df, difference_evidence_df, relationships_df,
         evidence_rules_df, metadata_relationship_df, parties_with_attrs
     )
