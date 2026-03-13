@@ -480,15 +480,20 @@ def resolve_entities_with_conflicts(candidate_entities, entity_graph, std_attr_d
 
 def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_df, difference_evidence_df):
     """
-    Compute entity analytics.
+    Compute entity analytics with dual scoring views.
     
-    Metrics:
+    Attribute-based metrics (analytics & sanity checks):
     - Entity size: party_count, total_pairs
     - Attribute coverage: unique_attributes, total_attribute_instances
     - Attribute quality: fully_matching_attributes, contradicting_attributes
     - Score distribution: avg_pair_score, min_pair_score, max_pair_score
+    
+    Evidence-based metrics (audit trail for decision logic):
+    - Evidence counts: total_match_evidence, total_difference_evidence
+    - Evidence quality: evidence_match_ratio, avg_evidence_ratio_per_pair
     """
     analytics = {
+        # Attribute-based metrics
         'total_pairs': 0,
         'unique_attributes': 0,
         'total_attribute_instances': 0,
@@ -496,7 +501,12 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
         'contradicting_attributes': 0,
         'avg_pair_score': 0.0,
         'min_pair_score': 1.0,
-        'max_pair_score': 0.0
+        'max_pair_score': 0.0,
+        # Evidence-based metrics
+        'total_match_evidence': 0,
+        'total_difference_evidence': 0,
+        'evidence_match_ratio': 0.0,
+        'avg_evidence_ratio_per_pair': 0.0
     }
     
     if len(party_ids) == 1:
@@ -522,12 +532,13 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
     
     # Analyze all pairs
     pair_scores = []
+    pair_evidence_ratios = []
     from itertools import combinations
     
     for party1_id, party2_id in combinations(party_ids, 2):
         analytics['total_pairs'] += 1
         
-        # Compute attribute-level match score for this pair
+        # ATTRIBUTE-BASED: Compute attribute-level match score for this pair
         attrs1 = party_attr_map.get(party1_id, {})
         attrs2 = party_attr_map.get(party2_id, {})
         
@@ -538,12 +549,40 @@ def compute_entity_analytics(entity_id, party_ids, std_attr_df, match_evidence_d
             matching = sum(1 for attr in common_attrs if attrs1[attr] == attrs2[attr])
             pair_score = matching / len(common_attrs)
             pair_scores.append(pair_score)
+        
+        # EVIDENCE-BASED: Count match and difference evidence for this pair
+        pair_matches = match_evidence_df[
+            (((match_evidence_df['party_id_1'] == party1_id) & (match_evidence_df['party_id_2'] == party2_id)) |
+             ((match_evidence_df['party_id_1'] == party2_id) & (match_evidence_df['party_id_2'] == party1_id)))
+        ]
+        pair_diffs = difference_evidence_df[
+            (((difference_evidence_df['party_id_1'] == party1_id) & (difference_evidence_df['party_id_2'] == party2_id)) |
+             ((difference_evidence_df['party_id_1'] == party2_id) & (difference_evidence_df['party_id_2'] == party1_id)))
+        ]
+        
+        num_matches = len(pair_matches)
+        num_diffs = len(pair_diffs)
+        analytics['total_match_evidence'] += num_matches
+        analytics['total_difference_evidence'] += num_diffs
+        
+        # Calculate evidence ratio for this pair
+        if num_matches + num_diffs > 0:
+            pair_evidence_ratio = num_matches / (num_matches + num_diffs)
+            pair_evidence_ratios.append(pair_evidence_ratio)
     
-    # Compute aggregate pair scores
+    # Compute aggregate attribute-based scores
     if pair_scores:
         analytics['avg_pair_score'] = sum(pair_scores) / len(pair_scores)
         analytics['min_pair_score'] = min(pair_scores)
         analytics['max_pair_score'] = max(pair_scores)
+    
+    # Compute aggregate evidence-based scores
+    total_evidence = analytics['total_match_evidence'] + analytics['total_difference_evidence']
+    if total_evidence > 0:
+        analytics['evidence_match_ratio'] = analytics['total_match_evidence'] / total_evidence
+    
+    if pair_evidence_ratios:
+        analytics['avg_evidence_ratio_per_pair'] = sum(pair_evidence_ratios) / len(pair_evidence_ratios)
     
     # Compute attribute-level metrics across all parties
     # For each attribute type, check if all parties agree
@@ -583,6 +622,7 @@ def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, 
             'master_entity_id': entity_id,
             'party_count': len(party_ids),
             'total_pairs': analytics['total_pairs'],
+            # Attribute-based analytics (sanity checks)
             'unique_attributes': analytics['unique_attributes'],
             'total_attribute_instances': analytics['total_attribute_instances'],
             'fully_matching_attributes': analytics['fully_matching_attributes'],
@@ -590,6 +630,12 @@ def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, 
             'avg_pair_score': round(analytics['avg_pair_score'], 4),
             'min_pair_score': round(analytics['min_pair_score'], 4),
             'max_pair_score': round(analytics['max_pair_score'], 4),
+            # Evidence-based analytics (decision audit)
+            'total_match_evidence': analytics['total_match_evidence'],
+            'total_difference_evidence': analytics['total_difference_evidence'],
+            'evidence_match_ratio': round(analytics['evidence_match_ratio'], 4),
+            'avg_evidence_ratio_per_pair': round(analytics['avg_evidence_ratio_per_pair'], 4),
+            # Metadata
             'created_at': datetime.now().isoformat(),
             'updated_at': datetime.now().isoformat(),
             'is_active': True
