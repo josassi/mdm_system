@@ -647,6 +647,201 @@ SP_Smile_policy_P001,                    SP_SmartPlus_application_A001_applicant
 
 ---
 
+## Gold Layer - Entity Resolution
+
+### Overview
+
+The Gold layer implements **scoring-based entity resolution** with a **tiered hard link approach** that balances automation with data quality protection.
+
+**Key Innovation:** Hard links (like exact HKID matches) no longer blindly force merges. Instead, they're evaluated against an `attribute_match_ratio` threshold to catch data quality issues.
+
+### Scoring-Based Resolution Logic
+
+**Inputs:**
+- `MATCH_EVIDENCE`: Positive evidence with confidence scores (0.0-1.0)
+- `DIFFERENCE_EVIDENCE`: Negative evidence with severity scores (0.0-1.0)
+- `RELATIONSHIP`: Business relationships with confidence metadata
+- `METADATA_EVIDENCE_RULE`: Attribute weights and thresholds
+
+**Pair Scoring Priority (compute_pair_score):**
+
+1. **Hard Blocks (Priority 1):** `severity=1.0` → MUST_NOT_MERGE
+   - Example: Different valid HKIDs (C123456 vs C999999)
+   - Decision: Block merge unconditionally
+
+2. **Hard Links with Tiered Thresholds (Priority 2):**
+   - Hard link detected: `confidence=1.0` (exact HKID, exact passport, etc.)
+   - Calculate `attribute_match_ratio = matches / (matches + differences)`
+   - Apply 3-tier decision logic (see below)
+
+3. **Aggregate Scoring (Priority 3):** No hard links/blocks
+   - `match_score = Σ(confidence × match_weight)`
+   - `penalty_score = Σ(severity × difference_weight)`
+   - `final_score = (match_score - penalty_score) / max_possible`
+   - Decision: MERGE if ≥ threshold (default 0.5), else NO_MERGE
+
+### Tiered Hard Link Logic
+
+**Problem:** Hard links (exact HKID) previously forced merges even with severe attribute conflicts:
+- CP001 + QM038: Same HKID but 83% attribute differences → Incorrect merge
+- PM007 + QM050: Same HKID but 86% attribute differences → Incorrect merge
+
+**Solution: Attribute Match Ratio Safety Check**
+
+```
+attribute_match_ratio = num_matches / (num_matches + num_differences)
+```
+
+**3-Tier Decision Framework:**
+
+| Tier | Match Ratio | Decision | Confidence | Action |
+|------|-------------|----------|------------|---------|
+| **HIGH** | ≥ 50% | MUST_MERGE | 1.0 | Auto-merge |
+| **MEDIUM** | 30-49% | MUST_MERGE | 0.85 | Auto-merge with flag |
+| **LOW** | < 30% | REVIEW_REQUIRED | 0.5 | Block merge, require steward |
+
+**Tier 1 (HIGH Confidence):**
+- Hard link + strong attribute support (≥50% match)
+- Legitimate same-person match
+- Auto-merge with full confidence
+- Example: QM038 + PM033 (100% attribute match, same HKID)
+
+**Tier 2 (MEDIUM Confidence):**
+- Hard link + moderate attribute support (30-50% match)
+- Possible name variation, missing data, or data quality issue
+- Auto-merge but flag for periodic review
+- Lower confidence score (0.85) signals caution
+
+**Tier 3 (LOW Confidence):**
+- Hard link + weak attribute support (<30% match)
+- Likely data entry error (wrong HKID assigned)
+- **Block merge** - parties remain separate entities
+- Requires steward review before merging
+- Examples: CP001, PM007 (14-17% match ratios)
+
+**Impact:**
+- 19 suspicious hard link pairs flagged (17% of all hard links)
+- 83% of hard links still auto-process (low steward burden)
+- Data quality issues caught before creating incorrect entities
+
+### Dual Scoring Analytics
+
+Both `PARTY_TO_ENTITY_LINK` and `MASTER_ENTITY` provide **dual scoring perspectives**:
+
+**1. Attribute-Based Scores (Quality View):**
+- Simple value equality checks
+- Ignores evidence weights and confidence
+- Useful for: Data quality assessment, sanity checks
+- Metrics: `attribute_match_ratio`, `avg_pair_score`, `min_pair_score`, `max_pair_score`
+
+**2. Evidence-Based Scores (Decision Audit):**
+- Reflects actual matching logic (weights, confidence, severity)
+- Includes hard links, soft matches, penalties
+- Useful for: Understanding why entities merged, audit trail
+- Metrics: `total_match_evidence`, `total_difference_evidence`, `evidence_match_ratio`
+
+**Why Both?**
+- Attribute scores reveal when hard links override poor data quality
+- Evidence scores show the decision-making rationale
+- Together they provide complete transparency
+
+### PARTY_TO_ENTITY_LINK Schema
+
+```csv
+link_id,                    # UUID
+party_id,                   # FK to SOURCE_PARTY
+master_entity_id,           # FK to MASTER_ENTITY
+link_type,                  # SINGLETON | HARD_LINK | HARD_LINK_LOW_CONFIDENCE | SCORED
+link_decision,              # SINGLETON | MUST_MERGE | REVIEW_REQUIRED | MERGE
+confidence_score,           # Best score with any peer (0.0-1.0)
+confidence_tier,            # HIGH | MEDIUM | LOW | NULL (for tiered hard links)
+avg_score_with_peers,       # Average evidence score across all peers
+best_score_with_peer,       # Best evidence score with any peer
+num_matches,                # Count of MATCH_EVIDENCE items
+num_differences,            # Count of DIFFERENCE_EVIDENCE items
+num_hard_blocks,            # Count of blocking differences (severity=1.0)
+attribute_match_ratio,      # Quality indicator: matches/(matches+diffs)
+created_at,
+rec_start_date,             # SCD2 support
+rec_end_date,               # SCD2 support
+is_current                  # SCD2 flag
+```
+
+**Key Fields:**
+- `confidence_tier`: NEW - Shows quality level of hard link merges
+- `link_decision=REVIEW_REQUIRED`: NEW - Pairs blocked for steward review
+- `attribute_match_ratio`: Data quality red flag when low despite high confidence
+
+### MASTER_ENTITY Schema
+
+```csv
+master_entity_id,           # ENTITY_0001, ENTITY_0002, ...
+party_count,                # Number of parties in this entity
+source_party_ids,           # JSON array of party IDs
+# Attribute-based analytics (quality view)
+avg_pair_score,             # Average simple attribute similarity
+min_pair_score,             # Lowest attribute similarity
+max_pair_score,             # Highest attribute similarity
+# Evidence-based analytics (decision audit)
+total_match_evidence,       # Count of MATCH_EVIDENCE items
+total_difference_evidence,  # Count of DIFFERENCE_EVIDENCE items
+evidence_match_ratio,       # Matches/(Matches+Diffs) for all evidence
+avg_evidence_ratio_per_pair,# Average evidence ratio across pairs
+created_at,
+updated_at,
+is_active
+```
+
+**Analytics Example:**
+```
+ENTITY_0041 (CP001 + QM038 + PM033) - BEFORE tiered approach:
+  party_count: 3
+  avg_pair_score: 0.6667        # Attribute-based: mediocre
+  evidence_match_ratio: 0.8571  # Evidence-based: good (hard link)
+  → Hard link masked poor attribute quality!
+
+ENTITY_0058 (CP001 only) - AFTER tiered approach:
+  party_count: 1 (singleton)
+  → Low attribute match caught, merge blocked
+
+ENTITY_0043 (QM038 + PM033) - AFTER tiered approach:
+  party_count: 2
+  avg_pair_score: 1.0           # Perfect attribute match
+  evidence_match_ratio: 1.0     # Perfect evidence
+  confidence_tier: HIGH
+  → Legitimate merge approved
+```
+
+### Steward Workflow
+
+**1. Identify Cases Requiring Review:**
+```sql
+SELECT * FROM party_to_entity_link 
+WHERE link_decision = 'REVIEW_REQUIRED' 
+   OR confidence_tier = 'MEDIUM'
+ORDER BY attribute_match_ratio ASC;
+```
+
+**2. Investigate Root Cause:**
+- Check source data for HKID assignment errors
+- Verify if legitimate variance (name change, missing data)
+- Review MATCH_EVIDENCE and DIFFERENCE_EVIDENCE
+
+**3. Take Action:**
+- **If data error:** Correct source system, re-run resolution
+- **If legitimate:** Override threshold, document rationale
+- **If uncertain:** Request additional verification
+
+**4. Monitor Trends:**
+```sql
+SELECT confidence_tier, COUNT(*) 
+FROM party_to_entity_link 
+WHERE link_type LIKE 'HARD_LINK%'
+GROUP BY confidence_tier;
+```
+
+---
+
 ## Silver/Gold Matching Strategy
 
 ### Challenge: Sparse Data in CRM Systems
