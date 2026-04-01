@@ -88,23 +88,6 @@ export default function ClusterDetail() {
             </div>
             
             <div className="flex items-center gap-2">
-              {entityIds.length > 0 && (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-500">Entities:</span>
-                  {entityIds.slice(0, 3).map(entityId => (
-                    <Link 
-                      key={entityId}
-                      to={`/entities/${entityId}`}
-                      className="badge bg-purple-100 text-purple-700 text-xs hover:bg-purple-200"
-                    >
-                      {entityId.substring(0, 10)}...
-                    </Link>
-                  ))}
-                  {entityIds.length > 3 && (
-                    <span className="text-xs text-gray-500">+{entityIds.length - 3} more</span>
-                  )}
-                </div>
-              )}
               {hasConflicts && (
                 <div className="badge badge-danger">
                   <ShieldExclamationIcon className="h-3 w-3 mr-1" />
