@@ -180,6 +180,7 @@ export default function ClusterDetail() {
                 <BlockingPanel
                   blocking={clusterDetail.blocking}
                   parties={clusterDetail.parties}
+                  neutralMode={true}
                 />
               )}
             </div>

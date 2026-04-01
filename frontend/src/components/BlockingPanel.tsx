@@ -1,12 +1,13 @@
-import { ShieldExclamationIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline'
+import { ShieldExclamationIcon, ExclamationCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline'
 import type { Blocking, Party } from '../types'
 
 interface BlockingPanelProps {
   blocking: Blocking[]
   parties: Party[]
+  neutralMode?: boolean
 }
 
-export default function BlockingPanel({ blocking, parties }: BlockingPanelProps) {
+export default function BlockingPanel({ blocking, parties, neutralMode = false }: BlockingPanelProps) {
   const getPartyName = (partyId: string) => {
     const party = parties.find(p => p.party_id === partyId)
     if (!party) return 'Unknown'
@@ -31,6 +32,20 @@ export default function BlockingPanel({ blocking, parties }: BlockingPanelProps)
   }
 
   const getReasonExplanation = (reason: string, details: Record<string, any>) => {
+    if (neutralMode) {
+      switch (reason) {
+        case 'DIFFERENT_HKID':
+          return `Parties have different HKID numbers (${details.party1_SUB_HKID || 'N/A'} vs ${details.party2_SUB_HKID || 'N/A'}).`
+        case 'DIFFERENT_PASSPORT':
+          return `Parties have different passport numbers (${details.party1_SUB_PASSPORT || 'N/A'} vs ${details.party2_SUB_PASSPORT || 'N/A'}).`
+        case 'GENDER_CONFLICT':
+          return `Parties with identical names (${details.shared_name}) have different genders (${details.party1_gender} vs ${details.party2_gender}).`
+        case 'DOB_DIFFERENCE':
+          return 'Date of birth difference exceeds threshold.'
+        default:
+          return 'Blocking rule applied based on conflicting attributes.'
+      }
+    }
     switch (reason) {
       case 'DIFFERENT_HKID':
         return `Two parties have different HKID numbers (${details.party1_SUB_HKID || 'N/A'} vs ${details.party2_SUB_HKID || 'N/A'}), which should be unique per person.`
@@ -49,8 +64,8 @@ export default function BlockingPanel({ blocking, parties }: BlockingPanelProps)
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <ShieldExclamationIcon className="h-12 w-12 text-green-300 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">No blocking conflicts</p>
+          <InformationCircleIcon className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+          <p className="text-xs text-gray-500">{neutralMode ? 'No blocking rules applied' : 'No blocking conflicts'}</p>
         </div>
       </div>
     )
@@ -60,18 +75,37 @@ export default function BlockingPanel({ blocking, parties }: BlockingPanelProps)
     <div className="h-full overflow-y-auto p-2">
       <div className="mb-2">
         <div className="flex items-center gap-1 mb-1">
-          <ShieldExclamationIcon className="h-4 w-4 text-red-600" />
-          <h2 className="text-sm font-bold text-gray-900">Blocking Conflicts ({blocking.length})</h2>
+          {neutralMode ? (
+            <InformationCircleIcon className="h-4 w-4 text-blue-600" />
+          ) : (
+            <ShieldExclamationIcon className="h-4 w-4 text-red-600" />
+          )}
+          <h2 className="text-sm font-bold text-gray-900">
+            {neutralMode ? 'Blocking Rules' : 'Blocking Conflicts'} ({blocking.length})
+          </h2>
         </div>
-        <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
-          <div className="flex items-start gap-1">
-            <ExclamationCircleIcon className="h-3 w-3 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="text-red-800">
-              <p className="font-semibold">Steward Action Required</p>
-              <p>Conflicts indicate false positive or data quality issues</p>
+        {!neutralMode && (
+          <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
+            <div className="flex items-start gap-1">
+              <ExclamationCircleIcon className="h-3 w-3 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="text-red-800">
+                <p className="font-semibold">Steward Action Required</p>
+                <p>Conflicts indicate false positive or data quality issues</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+        {neutralMode && (
+          <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+            <div className="flex items-start gap-1">
+              <InformationCircleIcon className="h-3 w-3 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-blue-800">
+                <p className="font-semibold">Blocking Rules Reference</p>
+                <p>Shows which party pairs have blocking rules applied</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <table className="data-table">
@@ -87,11 +121,17 @@ export default function BlockingPanel({ blocking, parties }: BlockingPanelProps)
         </thead>
         <tbody>
           {blocking.map((block) => (
-            <tr key={block.blocking_id} className="bg-red-50">
+            <tr key={block.blocking_id} className={neutralMode ? '' : 'bg-red-50'}>
               <td>
                 <div className="flex items-center gap-1">
-                  <ShieldExclamationIcon className="h-3 w-3 text-red-600 flex-shrink-0" />
-                  <span className="font-medium text-red-900">{getReasonLabel(block.blocking_reason_code)}</span>
+                  {neutralMode ? (
+                    <InformationCircleIcon className="h-3 w-3 text-blue-600 flex-shrink-0" />
+                  ) : (
+                    <ShieldExclamationIcon className="h-3 w-3 text-red-600 flex-shrink-0" />
+                  )}
+                  <span className={`font-medium ${neutralMode ? 'text-gray-900' : 'text-red-900'}`}>
+                    {getReasonLabel(block.blocking_reason_code)}
+                  </span>
                 </div>
               </td>
               <td className="text-gray-700">{getPartyName(block.party_id_1)}</td>
@@ -99,12 +139,14 @@ export default function BlockingPanel({ blocking, parties }: BlockingPanelProps)
               <td className="text-gray-600">
                 {block.rule_info.rule_name || '-'}
               </td>
-              <td className="text-xs text-red-900">
+              <td className={`text-xs ${neutralMode ? 'text-gray-700' : 'text-red-900'}`}>
                 {getReasonExplanation(block.blocking_reason_code, block.conflict_details)}
               </td>
               <td className="text-center">
                 <span className={`badge ${
-                  block.blocking_source === 'AUTOMATIC' ? 'badge-danger' : 'bg-purple-100 text-purple-800'
+                  neutralMode 
+                    ? (block.blocking_source === 'AUTOMATIC' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800')
+                    : (block.blocking_source === 'AUTOMATIC' ? 'badge-danger' : 'bg-purple-100 text-purple-800')
                 }`}>
                   {block.blocking_source === 'AUTOMATIC' ? 'Auto' : 'Manual'}
                 </span>
