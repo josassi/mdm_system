@@ -27,7 +27,7 @@ interface PartyGraphProps {
   matchEvidence: MatchEvidence[]
   blocking: Blocking[]
   relationships: Relationship[]
-  focusPartyId: string
+  focusPartyId: string | null
   onPartySelect: (partyId: string) => void
 }
 

@@ -273,6 +273,69 @@ def get_party(party_id):
     return jsonify(party_info)
 
 
+@app.route('/api/clusters/<cluster_id>', methods=['GET'])
+def get_cluster_detail(cluster_id):
+    """Get comprehensive cluster detail with all parties and relationships"""
+    
+    # Get all parties in this cluster
+    cluster_parties = data['party_cluster'][
+        (data['party_cluster']['cluster_id'] == cluster_id) &
+        (data['party_cluster']['rec_end_date'].isna())
+    ]
+    
+    if len(cluster_parties) == 0:
+        return jsonify({'error': 'Cluster not found'}), 404
+    
+    cluster_party_ids = cluster_parties['party_id'].tolist()
+    
+    # Get relationships for these parties
+    initial_relationships = get_relationships_for_parties(cluster_party_ids)
+    
+    # Add any parties that are connected via relationships (even if not in same cluster)
+    relationship_party_ids = set(cluster_party_ids)
+    for rel in initial_relationships:
+        relationship_party_ids.add(rel['from_party_id'])
+        relationship_party_ids.add(rel['to_party_id'])
+    
+    # Convert back to list
+    all_party_ids = list(relationship_party_ids)
+    
+    # Get party details for all parties (including relationship-connected ones)
+    parties = []
+    for pid in all_party_ids:
+        party_info = get_party_info(pid)
+        if party_info:
+            # Add flags to indicate membership
+            party_info['in_cluster'] = pid in cluster_party_ids
+            # Check if party is in an entity
+            entity_link = data['party_to_entity_link'][
+                data['party_to_entity_link']['party_id'] == pid
+            ]
+            if len(entity_link) > 0:
+                party_info['in_entity'] = True
+                party_info['entity_id'] = entity_link.iloc[0]['master_entity_id']
+            else:
+                party_info['in_entity'] = False
+                party_info['entity_id'] = None
+            party_info['is_focus'] = False  # No single focus party in cluster view
+            parties.append(party_info)
+    
+    # Get match evidence and blocking for all parties
+    match_evidence = get_match_evidence_for_parties(all_party_ids)
+    blocking = get_blocking_for_parties(all_party_ids)
+    
+    # Get relationships for all parties (re-fetch with expanded party list)
+    relationships = get_relationships_for_parties(all_party_ids)
+    
+    return jsonify({
+        'cluster_id': cluster_id,
+        'parties': parties,
+        'match_evidence': match_evidence,
+        'blocking': blocking,
+        'relationships': relationships
+    })
+
+
 @app.route('/api/parties/<party_id>/detail', methods=['GET'])
 def get_party_detail(party_id):
     """Get comprehensive party detail including cluster and entity context"""
