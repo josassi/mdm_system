@@ -58,4 +58,28 @@ export const dashboardApi = {
   },
 }
 
+export interface ConfigInfo {
+  current_config: string
+  available_configs: string[]
+}
+
+export interface ConfigChangeResponse {
+  success: boolean
+  current_config: string
+  entity_count: number
+  party_count: number
+}
+
+export const configApi = {
+  getConfig: async (): Promise<ConfigInfo> => {
+    const { data } = await api.get('/config')
+    return data
+  },
+
+  setConfig: async (config: string): Promise<ConfigChangeResponse> => {
+    const { data } = await api.post('/config', { config })
+    return data
+  },
+}
+
 export default api

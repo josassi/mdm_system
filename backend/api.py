@@ -15,12 +15,37 @@ CORS(app)
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
-def load_data():
-    """Load all necessary data from CSV files"""
+def load_data(config='default'):
+    """Load all necessary data from CSV files
+    
+    Args:
+        config: Configuration profile ('operational', 'analytics', 'default')
+                Determines which gold layer files to load
+    """
     bronze_dir = PROJECT_ROOT / 'data/bronze'
     silver_dir = PROJECT_ROOT / 'data/silver'
     gold_dir = PROJECT_ROOT / 'data/gold'
     metadata_dir = PROJECT_ROOT / 'data/uat_generation/metadata'
+    
+    # Determine file suffix based on config
+    suffix = ''
+    if config == 'operational':
+        suffix = '_operational'
+    elif config == 'analytics':
+        suffix = '_analytics'
+    # default has no suffix
+    
+    # Try to load config-specific files, fall back to default if not found
+    master_entity_file = gold_dir / f'master_entity{suffix}.csv'
+    party_link_file = gold_dir / f'party_to_entity_link{suffix}.csv'
+    
+    if not master_entity_file.exists():
+        print(f"Warning: {master_entity_file} not found, falling back to default")
+        master_entity_file = gold_dir / 'master_entity.csv'
+    
+    if not party_link_file.exists():
+        print(f"Warning: {party_link_file} not found, falling back to default")
+        party_link_file = gold_dir / 'party_to_entity_link.csv'
     
     data = {
         'source_party': pd.read_csv(bronze_dir / 'source_party.csv'),
@@ -31,8 +56,8 @@ def load_data():
         'difference_evidence': pd.read_csv(silver_dir / 'difference_evidence.csv'),
         'match_blocking': pd.read_csv(silver_dir / 'match_blocking.csv'),
         'party_cluster': pd.read_csv(silver_dir / 'party_cluster.csv'),
-        'master_entity': pd.read_csv(gold_dir / 'master_entity.csv'),
-        'party_to_entity_link': pd.read_csv(gold_dir / 'party_to_entity_link.csv'),
+        'master_entity': pd.read_csv(master_entity_file),
+        'party_to_entity_link': pd.read_csv(party_link_file),
         'metadata_system': pd.read_csv(metadata_dir / 'metadata_system.csv'),
         'metadata_system_table': pd.read_csv(metadata_dir / 'metadata_system_table.csv'),
         'metadata_party_type': pd.read_csv(metadata_dir / 'metadata_party_type.csv'),
@@ -44,13 +69,53 @@ def load_data():
     return data
 
 
+# Global data store - will be reloaded when config changes
 data = load_data()
+current_config = 'default'
 
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+    return jsonify({
+        'status': 'healthy', 
+        'timestamp': datetime.now().isoformat(),
+        'current_config': current_config
+    })
+
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Get current configuration profile"""
+    return jsonify({
+        'current_config': current_config,
+        'available_configs': ['default', 'operational', 'analytics']
+    })
+
+
+@app.route('/api/config', methods=['POST'])
+def set_config():
+    """Switch configuration profile"""
+    global data, current_config
+    
+    new_config = request.json.get('config', 'default')
+    
+    if new_config not in ['default', 'operational', 'analytics']:
+        return jsonify({'error': 'Invalid config. Must be one of: default, operational, analytics'}), 400
+    
+    try:
+        # Reload data with new config
+        data = load_data(new_config)
+        current_config = new_config
+        
+        return jsonify({
+            'success': True,
+            'current_config': current_config,
+            'entity_count': len(data['master_entity']),
+            'party_count': len(data['party_to_entity_link'])
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to load config: {str(e)}'}), 500
 
 
 @app.route('/api/entities', methods=['GET'])

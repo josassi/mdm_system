@@ -1,0 +1,28 @@
+# Entity Resolution Configuration - DEFAULT Profile
+# Use case: General purpose, balanced approach
+# Priority: Balance between precision and recall
+
+name: "default"
+description: "Default balanced entity resolution"
+
+# Core thresholds
+merge_threshold: 0.5  # Balanced threshold
+min_attribute_match_ratio: 0.3  # Accept 30%+ attribute agreement
+
+# Hard link tiered thresholds
+hard_link_tier1_ratio: 0.5   # HIGH confidence: >= 50% attribute match
+hard_link_tier2_ratio: 0.3   # MEDIUM confidence: 30-50% attribute match  
+hard_link_tier3_ratio: 0.3   # LOW confidence: < 30% (review required)
+
+# Matching rules
+allow_soft_matches: false  # Use exact matches by default
+require_business_relationship: false  # Don't require FK links
+min_confidence_for_merge: 0.7  # Moderate confidence threshold
+
+# Evidence filtering
+use_hard_links_only: false  # Use all evidence
+ignore_low_quality_evidence: false  # Use all evidence
+
+# Output settings
+output_suffix: ""
+output_description: "Entity Resolution (Default)"

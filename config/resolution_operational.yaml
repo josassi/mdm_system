@@ -1,0 +1,28 @@
+# Entity Resolution Configuration - OPERATIONAL Profile
+# Use case: Transaction processing, contract management, payment systems
+# Priority: Data quality over volume - minimize false positives
+
+name: "operational"
+description: "Strict resolution for operational systems - no place for errors"
+
+# Core thresholds
+merge_threshold: 0.85  # High bar for aggregate scoring
+min_attribute_match_ratio: 0.7  # Require 70%+ attribute agreement
+
+# Hard link tiered thresholds
+hard_link_tier1_ratio: 0.8   # HIGH confidence: >= 80% attribute match
+hard_link_tier2_ratio: 0.6   # MEDIUM confidence: 60-80% attribute match  
+hard_link_tier3_ratio: 0.4   # LOW confidence: < 60% attribute match (review required)
+
+# Matching rules
+allow_soft_matches: false  # Only exact/high-confidence matches
+require_business_relationship: true  # Prefer parties with FK links
+min_confidence_for_merge: 0.9  # Only merge with very high confidence evidence
+
+# Evidence filtering
+use_hard_links_only: false  # Use all evidence, but with strict thresholds
+ignore_low_quality_evidence: true  # Skip evidence with confidence < 0.7
+
+# Output settings
+output_suffix: "_operational"
+output_description: "Operational Entity Resolution (Strict)"

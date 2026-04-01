@@ -34,8 +34,10 @@ import networkx as nx
 from pathlib import Path
 from datetime import datetime
 import uuid
+import argparse
 from itertools import combinations
 from collections import defaultdict
+from config_loader import load_config, list_available_configs, ResolutionConfig
 
 
 def load_data():
@@ -68,7 +70,7 @@ def load_data():
 
 
 def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evidence_df, 
-                       relationships_df, evidence_rules_df, metadata_relationship_df):
+                       relationships_df, evidence_rules_df, metadata_relationship_df, config: ResolutionConfig):
     """
     Compute aggregate score for a pair based on all evidence types.
     
@@ -76,10 +78,10 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
     decision: 'MUST_NOT_MERGE' | 'MUST_MERGE' | 'MERGE' | 'NO_MERGE' | 'REVIEW_REQUIRED'
     confidence_tier: 'HIGH' | 'MEDIUM' | 'LOW' | None
     
-    Tiered Hard Link Logic:
-    - Tier 1 (HIGH): Hard link + attribute_match_ratio >= 0.5 → Auto-merge
-    - Tier 2 (MEDIUM): Hard link + 0.3 <= ratio < 0.5 → Auto-merge with flag
-    - Tier 3 (LOW): Hard link + ratio < 0.3 → Require steward review
+    Tiered Hard Link Logic (configurable thresholds):
+    - Tier 1 (HIGH): Hard link + attribute_match_ratio >= tier1_ratio → Auto-merge
+    - Tier 2 (MEDIUM): Hard link + tier2_ratio <= ratio < tier1_ratio → Auto-merge with flag
+    - Tier 3 (LOW): Hard link + ratio < tier3_ratio → Require steward review
     """
     # Get evidence for this pair
     pair_matches = match_evidence_df[
@@ -113,13 +115,13 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
         total_evidence = len(pair_matches) + len(pair_differences)
         match_ratio = len(pair_matches) / total_evidence if total_evidence > 0 else 0
         
-        # Tier 1: High confidence (>= 50% attribute support)
-        if match_ratio >= 0.5:
+        # Tier 1: High confidence (>= tier1 threshold)
+        if match_ratio >= config.hard_link_tier1_ratio:
             return ('MUST_MERGE', 1.0, f'Hard link: {attr} (high confidence)', 'HIGH')
-        # Tier 2: Medium confidence (30-50% attribute support)
-        elif match_ratio >= 0.3:
+        # Tier 2: Medium confidence (tier2-tier1 threshold)
+        elif match_ratio >= config.hard_link_tier2_ratio:
             return ('MUST_MERGE', 0.85, f'Hard link: {attr} (medium confidence - flagged)', 'MEDIUM')
-        # Tier 3: Low confidence (< 30% attribute support - needs review)
+        # Tier 3: Low confidence (< tier3 threshold - needs review)
         else:
             return ('REVIEW_REQUIRED', 0.5, f'Hard link: {attr} but low attribute match ({match_ratio:.0%})', 'LOW')
     
@@ -135,9 +137,9 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
                 total_evidence = len(pair_matches) + len(pair_differences)
                 match_ratio = len(pair_matches) / total_evidence if total_evidence > 0 else 0
                 
-                if match_ratio >= 0.5:
+                if match_ratio >= config.hard_link_tier1_ratio:
                     return ('MUST_MERGE', 1.0, f'Hard link: Relationship {rel["metadata_relationship_id"]} (high confidence)', 'HIGH')
-                elif match_ratio >= 0.3:
+                elif match_ratio >= config.hard_link_tier2_ratio:
                     return ('MUST_MERGE', 0.85, f'Hard link: Relationship {rel["metadata_relationship_id"]} (medium confidence)', 'MEDIUM')
                 else:
                     return ('REVIEW_REQUIRED', 0.5, f'Hard link: Relationship {rel["metadata_relationship_id"]} but low attribute match ({match_ratio:.0%})', 'LOW')
@@ -179,20 +181,18 @@ def compute_pair_score(party1_id, party2_id, match_evidence_df, difference_evide
     raw_score = (match_score - penalty_score) / max_possible
     final_score = max(0.0, min(1.0, raw_score))
     
-    # Decision based on threshold
-    MERGE_THRESHOLD = 0.5  # Configurable
-    
-    if final_score >= MERGE_THRESHOLD:
+    # Decision based on configurable threshold
+    if final_score >= config.merge_threshold:
         return ('MERGE', final_score, f'Score {final_score:.2f} >= threshold', None)
     else:
         return ('NO_MERGE', final_score, f'Score {final_score:.2f} < threshold', None)
 
 
 def build_candidate_entities(match_evidence_df, difference_evidence_df, relationships_df,
-                             evidence_rules_df, metadata_relationship_df, all_party_ids):
+                             evidence_rules_df, metadata_relationship_df, all_party_ids, config: ResolutionConfig):
     """
     Build candidate entities using scoring-based graph clustering.
-    Only create edges for pairs that should merge based on aggregate scores.
+    Only create edges for pairs that should merge based on aggregate scores (configurable thresholds).
     
     Returns: dict of {entity_id: [party_ids]}
     """
@@ -236,7 +236,7 @@ def build_candidate_entities(match_evidence_df, difference_evidence_df, relation
     for party1_id, party2_id in pairs_with_evidence:
         decision, score, reason, confidence_tier = compute_pair_score(
             party1_id, party2_id, match_evidence_df, difference_evidence_df,
-            relationships_df, evidence_rules_df, metadata_relationship_df
+            relationships_df, evidence_rules_df, metadata_relationship_df, config
         )
         
         decision_stats[decision] += 1
@@ -697,7 +697,7 @@ def generate_master_entities(resolved_entities, std_attr_df, match_evidence_df, 
 
 def generate_party_to_entity_links(resolved_entities, entity_graph, match_evidence_df, 
                                     difference_evidence_df, relationships_df,
-                                    evidence_rules_df, metadata_relationship_df):
+                                    evidence_rules_df, metadata_relationship_df, config: ResolutionConfig):
     """Generate PARTY_TO_ENTITY_LINK table with actual scoring information"""
     links = []
     
@@ -741,7 +741,7 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
                 # Compute score with this peer
                 decision, score, reason, confidence_tier = compute_pair_score(
                     party_id, peer_id, match_evidence_df, difference_evidence_df,
-                    relationships_df, evidence_rules_df, metadata_relationship_df
+                    relationships_df, evidence_rules_df, metadata_relationship_df, config
                 )
                 
                 peer_scores.append(score)
@@ -814,14 +814,16 @@ def generate_party_to_entity_links(resolved_entities, entity_graph, match_eviden
     return pd.DataFrame(links)
 
 
-def export_gold_tables(master_entity_df, party_link_df, output_dir='data/gold'):
-    """Export Gold layer tables"""
+def export_gold_tables(master_entity_df, party_link_df, config: ResolutionConfig, output_dir='data/gold'):
+    """Export Gold layer tables with config-based naming"""
     project_root = Path(__file__).parent.parent.parent
     gold_dir = project_root / output_dir
     gold_dir.mkdir(parents=True, exist_ok=True)
     
-    master_entity_file = gold_dir / 'master_entity.csv'
-    party_link_file = gold_dir / 'party_to_entity_link.csv'
+    # Use config suffix for output files
+    suffix = config.output_suffix
+    master_entity_file = gold_dir / f'master_entity{suffix}.csv'
+    party_link_file = gold_dir / f'party_to_entity_link{suffix}.csv'
     
     master_entity_df.to_csv(master_entity_file, index=False)
     party_link_df.to_csv(party_link_file, index=False)
@@ -831,10 +833,25 @@ def export_gold_tables(master_entity_df, party_link_df, output_dir='data/gold'):
     print(f"  {party_link_file}")
 
 
-def main():
+def main(config_name='default'):
+    """
+    Run entity resolution with specified configuration.
+    
+    Args:
+        config_name: Name of config profile ('operational', 'analytics', 'default')
+    """
+    # Load configuration
+    config = load_config(config_name)
+    
     print("="*70)
-    print("ENTITY RESOLUTION WITH SCORING-BASED CLUSTERING")
+    print(f"{config.output_description.upper()}")
+    print(f"Configuration: {config.name}")
     print("="*70)
+    print(f"  Merge threshold: {config.merge_threshold}")
+    print(f"  Hard link tier1 (HIGH): >= {config.hard_link_tier1_ratio}")
+    print(f"  Hard link tier2 (MEDIUM): >= {config.hard_link_tier2_ratio}")
+    print(f"  Hard link tier3 (LOW): >= {config.hard_link_tier3_ratio}")
+    print(f"  Min attribute match ratio: {config.min_attribute_match_ratio}")
     
     # Load data
     (source_party_df, match_evidence_df, difference_evidence_df, std_attr_df,
@@ -852,7 +869,7 @@ def main():
     # Build entities using scoring-based clustering (only for parties with attributes)
     entities, entity_graph, decision_stats, review_required_pairs = build_candidate_entities(
         match_evidence_df, difference_evidence_df, relationships_df,
-        evidence_rules_df, metadata_relationship_df, parties_with_attrs
+        evidence_rules_df, metadata_relationship_df, parties_with_attrs, config
     )
     
     # Generate Gold layer tables with analytics
@@ -861,7 +878,7 @@ def main():
     )
     party_link_df = generate_party_to_entity_links(
         entities, entity_graph, match_evidence_df, difference_evidence_df,
-        relationships_df, evidence_rules_df, metadata_relationship_df
+        relationships_df, evidence_rules_df, metadata_relationship_df, config
     )
     
     print(f"\n  Verification: {len(party_link_df)} party-to-entity links for {len(parties_with_attrs)} parties with attributes")
@@ -871,12 +888,36 @@ def main():
         print(f"  ✅ All parties with attributes have entity assignments")
     
     # Export
-    export_gold_tables(master_entity_df, party_link_df)
+    export_gold_tables(master_entity_df, party_link_df, config)
     
     print("\n" + "="*70)
-    print("✅ ENTITY RESOLUTION COMPLETE")
+    print(f"✅ {config.output_description.upper()} COMPLETE")
     print("="*70)
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(
+        description='Entity Resolution with configurable profiles',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Available configurations:
+  operational - Strict thresholds for operational systems (no errors)
+  analytics   - Lenient thresholds for customer counting
+  default     - Balanced approach
+
+Examples:
+  python compute_entity_resolution.py --config operational
+  python compute_entity_resolution.py --config analytics
+  python compute_entity_resolution.py  # Uses default config
+        """
+    )
+    parser.add_argument(
+        '--config', 
+        type=str, 
+        default='default',
+        choices=list_available_configs(),
+        help='Configuration profile to use'
+    )
+    
+    args = parser.parse_args()
+    main(args.config)

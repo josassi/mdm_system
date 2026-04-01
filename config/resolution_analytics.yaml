@@ -1,0 +1,28 @@
+# Entity Resolution Configuration - ANALYTICS Profile
+# Use case: Customer counting, marketing analytics, reporting, insights
+# Priority: Recall over precision - maximize entity consolidation
+
+name: "analytics"
+description: "Lenient resolution for analytics - optimize for customer counting"
+
+# Core thresholds
+merge_threshold: 0.4  # Lower bar for aggregate scoring
+min_attribute_match_ratio: 0.2  # Accept 20%+ attribute agreement
+
+# Hard link tiered thresholds
+hard_link_tier1_ratio: 0.5   # HIGH confidence: >= 50% attribute match
+hard_link_tier2_ratio: 0.3   # MEDIUM confidence: 30-50% attribute match  
+hard_link_tier3_ratio: 0.15  # LOW confidence: 15-30% (still merge for analytics)
+
+# Matching rules
+allow_soft_matches: true  # Include fuzzy matches, probabilistic evidence
+require_business_relationship: false  # Match across clusters using PII
+min_confidence_for_merge: 0.5  # Accept moderate confidence evidence
+
+# Evidence filtering
+use_hard_links_only: false  # Use all available evidence
+ignore_low_quality_evidence: false  # Use all evidence, even lower quality
+
+# Output settings
+output_suffix: "_analytics"
+output_description: "Analytics Entity Resolution (Lenient)"

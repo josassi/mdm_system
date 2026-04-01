@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { CubeIcon, ChartBarIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline'
+import ConfigSelector from './ConfigSelector'
 
 interface LayoutProps {
   children: ReactNode
@@ -39,13 +40,16 @@ export default function Layout({ children }: LayoutProps) {
               </div>
             </Link>
             
-            <nav className="flex items-center space-x-2">
-              <NavLink to="/" icon={ChartBarIcon}>
-                Dashboard
-              </NavLink>
-              <NavLink to="/entities" icon={BuildingOfficeIcon}>
-                Entities
-              </NavLink>
+            <nav className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <NavLink to="/" icon={ChartBarIcon}>
+                  Dashboard
+                </NavLink>
+                <NavLink to="/entities" icon={BuildingOfficeIcon}>
+                  Entities
+                </NavLink>
+              </div>
+              <ConfigSelector />
             </nav>
           </div>
         </div>
