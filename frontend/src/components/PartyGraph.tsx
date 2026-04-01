@@ -162,7 +162,20 @@ export default function PartyGraph({
         simulationRef.current.stop()
       }
     }
-  }, [parties, matchEvidence, blocking, relationships, focusPartyId, selectedPartyId, onPartySelect, setNodes, setEdges])
+  }, [parties, matchEvidence, blocking, relationships, focusPartyId, onPartySelect, setNodes, setEdges])
+
+  // Update node selection state without resetting layout
+  useEffect(() => {
+    setNodes(prevNodes => 
+      prevNodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          isSelected: selectedPartyId === node.id,
+        },
+      }))
+    )
+  }, [selectedPartyId, setNodes])
 
   // Handle node drag events to update simulation
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
