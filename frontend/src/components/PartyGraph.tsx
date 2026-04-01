@@ -53,6 +53,25 @@ export default function PartyGraph({
   useEffect(() => {
     const newEdges: Edge[] = []
 
+    // Generate entity color mapping for visual identification
+    const entityIds = [...new Set(parties.map(p => (p as any).entity_id).filter(Boolean))]
+    const entityColors: Record<string, string> = {}
+    const colorPalette = [
+      '#3b82f6', // blue
+      '#8b5cf6', // purple
+      '#ec4899', // pink
+      '#f59e0b', // amber
+      '#10b981', // emerald
+      '#06b6d4', // cyan
+      '#f97316', // orange
+      '#84cc16', // lime
+      '#6366f1', // indigo
+      '#14b8a6', // teal
+    ]
+    entityIds.forEach((entityId, idx) => {
+      entityColors[entityId] = colorPalette[idx % colorPalette.length]
+    })
+
     // Create initial nodes with random positions
     const nodeData: SimulationNode[] = parties.map(party => ({
       id: party.party_id,
@@ -64,6 +83,7 @@ export default function PartyGraph({
         hasConflict: blocking.some(b => 
           b.party_id_1 === party.party_id || b.party_id_2 === party.party_id
         ),
+        entityColor: (party as any).entity_id ? entityColors[(party as any).entity_id] : undefined,
         onClick: () => {
           setSelectedPartyId(party.party_id)
           onPartySelect(party.party_id)

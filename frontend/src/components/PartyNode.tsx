@@ -8,11 +8,12 @@ interface PartyNodeData {
   party: Party
   isSelected: boolean
   hasConflict: boolean
+  entityColor?: string
   onClick: () => void
 }
 
 function PartyNode({ data }: { data: PartyNodeData }) {
-  const { party, isSelected, hasConflict, onClick } = data
+  const { party, isSelected, hasConflict, entityColor, onClick } = data
   const navigate = useNavigate()
   
   // Filter out metadata/non-matching attributes, then show first 10
@@ -74,11 +75,14 @@ function PartyNode({ data }: { data: PartyNodeData }) {
       <div
         className={`rounded p-2 shadow min-w-[200px] max-w-[280px] ${
           hasConflict
-            ? 'bg-red-50 border border-red-400'
+            ? 'bg-red-50 border-2 border-red-400'
             : isSelected
-            ? 'bg-blue-50 border border-blue-400'
+            ? 'bg-blue-50 border-2 border-blue-400'
+            : entityColor
+            ? 'bg-white border-2'
             : 'bg-white border border-gray-300'
         }`}
+        style={entityColor && !hasConflict && !isSelected ? { borderColor: entityColor } : {}}
       >
         <div className="flex items-center gap-1 mb-0.5">
           {hasConflict && <ShieldExclamationIcon className="h-3 w-3 text-red-600 flex-shrink-0" />}
