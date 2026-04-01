@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Entity, EntityDetail, PartyDetail, Party, MatchEvidence, Blocking, Relationship } from '../types'
+import type { Entity, EntityDetail, PartyDetail, Party, MatchEvidence, Blocking, Relationship, Cluster } from '../types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -91,6 +91,11 @@ export interface ClusterDetail {
 }
 
 export const clusterApi = {
+  getClusters: async (): Promise<Cluster[]> => {
+    const { data } = await api.get('/clusters')
+    return data
+  },
+
   getClusterDetail: async (clusterId: string): Promise<ClusterDetail> => {
     const { data } = await api.get(`/clusters/${clusterId}`)
     return data

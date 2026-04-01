@@ -115,3 +115,14 @@ export interface PartyDetail {
   blocking: Blocking[]
   relationships: Relationship[]
 }
+
+export interface Cluster {
+  cluster_id: string
+  party_count: number
+  entity_count: number
+  resolution_rate: number
+  source_systems: string[]
+  party_types: string[]
+  relationship_count: number
+  evidence_count: number
+}

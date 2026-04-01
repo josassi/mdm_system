@@ -118,6 +118,93 @@ def set_config():
         return jsonify({'error': f'Failed to load config: {str(e)}'}), 500
 
 
+@app.route('/api/clusters', methods=['GET'])
+def get_clusters():
+    """Get list of all clusters with summary statistics"""
+    clusters_list = []
+    
+    # Get all active clusters
+    active_clusters = data['party_cluster'][data['party_cluster']['rec_end_date'].isna()]
+    cluster_ids = active_clusters['cluster_id'].unique()
+    
+    for cluster_id in cluster_ids:
+        try:
+            # Get all parties in this cluster
+            cluster_parties = active_clusters[active_clusters['cluster_id'] == cluster_id]
+            party_ids = cluster_parties['party_id'].tolist()
+            
+            # Get entities that these parties belong to
+            entity_links = data['party_to_entity_link'][
+                data['party_to_entity_link']['party_id'].isin(party_ids)
+            ]
+            unique_entities = entity_links['master_entity_id'].unique()
+            
+            # Get source systems
+            source_systems = set()
+            party_types = set()
+            for party_id in party_ids:
+                party = data['source_party'][data['source_party']['source_party_id'] == party_id]
+                if len(party) > 0:
+                    party = party.iloc[0]
+                    # Get system info
+                    system_table = data['metadata_system_table'][
+                        data['metadata_system_table']['system_table_id'] == party['system_table_id']
+                    ]
+                    if len(system_table) > 0:
+                        system_id = system_table.iloc[0]['system_id']
+                        system = data['metadata_system'][data['metadata_system']['system_id'] == system_id]
+                        if len(system) > 0:
+                            source_systems.add(system.iloc[0]['system_name'])
+                    
+                    # Get party type
+                    party_type = data['metadata_party_type'][
+                        data['metadata_party_type']['party_type_id'] == party['party_type_id']
+                    ]
+                    if len(party_type) > 0:
+                        party_types.add(party_type.iloc[0]['party_type'])
+            
+            # Count relationships in this cluster
+            relationships = data['relationship'][
+                (data['relationship']['from_party_id'].isin(party_ids)) |
+                (data['relationship']['to_party_id'].isin(party_ids))
+            ]
+            relationship_count = len(relationships)
+            
+            # Count match evidence between parties in cluster
+            evidence_count = 0
+            for i, party1 in enumerate(party_ids):
+                for party2 in party_ids[i+1:]:
+                    evidence = data['match_evidence'][
+                        (((data['match_evidence']['party_id_1'] == party1) & 
+                          (data['match_evidence']['party_id_2'] == party2)) |
+                         ((data['match_evidence']['party_id_1'] == party2) & 
+                          (data['match_evidence']['party_id_2'] == party1)))
+                    ]
+                    evidence_count += len(evidence)
+            
+            # Calculate resolution rate (% of parties that got resolved into entities)
+            parties_in_entities = len(entity_links)
+            resolution_rate = (parties_in_entities / len(party_ids)) if len(party_ids) > 0 else 0
+            
+            clusters_list.append({
+                'cluster_id': cluster_id,
+                'party_count': len(party_ids),
+                'entity_count': len(unique_entities),
+                'resolution_rate': float(resolution_rate),
+                'source_systems': list(source_systems),
+                'party_types': list(party_types),
+                'relationship_count': relationship_count,
+                'evidence_count': evidence_count,
+            })
+        except Exception as e:
+            print(f"Error processing cluster {cluster_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    return jsonify(clusters_list)
+
+
 @app.route('/api/entities', methods=['GET'])
 def get_entities():
     """Get list of all master entities with summary statistics"""

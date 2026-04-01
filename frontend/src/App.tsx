@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import EntityList from './pages/EntityList'
 import EntityDetail from './pages/EntityDetail'
 import PartyDetail from './pages/PartyDetail'
+import ClusterList from './pages/ClusterList'
 import ClusterDetail from './pages/ClusterDetail'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Route path="/entities" element={<EntityList />} />
         <Route path="/entities/:entityId" element={<EntityDetail />} />
         <Route path="/parties/:partyId" element={<PartyDetail />} />
+        <Route path="/clusters" element={<ClusterList />} />
         <Route path="/clusters/:clusterId" element={<ClusterDetail />} />
       </Routes>
     </Layout>

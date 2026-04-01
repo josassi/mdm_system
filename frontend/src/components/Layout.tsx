@@ -48,6 +48,9 @@ export default function Layout({ children }: LayoutProps) {
                 <NavLink to="/entities" icon={BuildingOfficeIcon}>
                   Entities
                 </NavLink>
+                <NavLink to="/clusters" icon={CubeIcon}>
+                  Clusters
+                </NavLink>
               </div>
               <ConfigSelector />
             </nav>
