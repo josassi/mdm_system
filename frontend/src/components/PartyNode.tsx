@@ -32,6 +32,14 @@ function PartyNode({ data }: { data: PartyNodeData }) {
     }
   }
 
+  const handleEntityIdClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const entityId = (party as any).entity_id
+    if (entityId) {
+      navigate(`/entities/${entityId}`)
+    }
+  }
+
   return (
     <div
       onClick={onClick}
@@ -89,16 +97,26 @@ function PartyNode({ data }: { data: PartyNodeData }) {
           onClick={handlePartyIdClick}
           title="Click to view party details"
         >
-          {party.party_id}
+          Party: {party.party_id}
         </div>
         
         {party.cluster_id && (
           <div 
-            className="font-mono text-[9px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer mb-1"
+            className="font-mono text-[9px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
             onClick={handleClusterIdClick}
             title="Click to view cluster details"
           >
             Cluster: {party.cluster_id}
+          </div>
+        )}
+        
+        {(party as any).entity_id && (
+          <div 
+            className="font-mono text-[9px] text-purple-600 hover:text-purple-800 hover:underline cursor-pointer mb-1"
+            onClick={handleEntityIdClick}
+            title="Click to view entity details"
+          >
+            Entity: {(party as any).entity_id}
           </div>
         )}
         
