@@ -1,4 +1,5 @@
 import { CheckCircleIcon, DocumentTextIcon } from '@heroicons/react/24/outline'
+import { Link } from 'react-router-dom'
 import type { MatchEvidence } from '../types'
 
 interface EvidencePanelProps {
@@ -65,8 +66,22 @@ export default function EvidencePanel({ evidence }: EvidencePanelProps) {
                   <span className="font-medium">{getRuleLabel(ev.match_rule_id)}</span>
                 </div>
               </td>
-              <td className="font-mono text-xs text-gray-700">{ev.party_id_1}</td>
-              <td className="font-mono text-xs text-gray-700">{ev.party_id_2}</td>
+              <td>
+                <Link
+                  to={`/parties/${ev.party_id_1}`}
+                  className="font-mono text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {ev.party_id_1}
+                </Link>
+              </td>
+              <td>
+                <Link
+                  to={`/parties/${ev.party_id_2}`}
+                  className="font-mono text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {ev.party_id_2}
+                </Link>
+              </td>
               <td className="font-medium">{ev.match_key}</td>
               <td className="font-mono text-gray-900">{ev.evidence_value}</td>
               <td className="text-center">

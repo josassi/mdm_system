@@ -1,25 +1,14 @@
 import { ShieldExclamationIcon, ExclamationCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline'
+import { Link } from 'react-router-dom'
 import type { Blocking, Party } from '../types'
 
 interface BlockingPanelProps {
   blocking: Blocking[]
-  parties: Party[]
+  parties?: Party[]
   neutralMode?: boolean
 }
 
-export default function BlockingPanel({ blocking, parties, neutralMode = false }: BlockingPanelProps) {
-  const getPartyName = (partyId: string) => {
-    const party = parties.find(p => p.party_id === partyId)
-    if (!party) return 'Unknown'
-    
-    const firstName = party.attributes.find(a => a.attribute_type === 'ATTR_FIRST_NAME')?.standardized_value
-    const lastName = party.attributes.find(a => a.attribute_type === 'ATTR_LAST_NAME')?.standardized_value
-    
-    if (firstName && lastName) {
-      return `${firstName} ${lastName}`
-    }
-    return party.source_system + ' - ' + party.source_table
-  }
+export default function BlockingPanel({ blocking, neutralMode = false }: BlockingPanelProps) {
 
   const getReasonLabel = (reason: string) => {
     const labels: Record<string, string> = {
@@ -134,8 +123,22 @@ export default function BlockingPanel({ blocking, parties, neutralMode = false }
                   </span>
                 </div>
               </td>
-              <td className="text-gray-700">{getPartyName(block.party_id_1)}</td>
-              <td className="text-gray-700">{getPartyName(block.party_id_2)}</td>
+              <td>
+                <Link
+                  to={`/parties/${block.party_id_1}`}
+                  className="font-mono text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {block.party_id_1}
+                </Link>
+              </td>
+              <td>
+                <Link
+                  to={`/parties/${block.party_id_2}`}
+                  className="font-mono text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {block.party_id_2}
+                </Link>
+              </td>
               <td className="text-gray-600">
                 {block.rule_info.rule_name || '-'}
               </td>
