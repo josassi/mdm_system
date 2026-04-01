@@ -6,7 +6,6 @@ import { clusterApi } from '../api/client'
 import PartyGraph from '../components/PartyGraph'
 import PartyAttributesPanel from '../components/PartyAttributesPanel'
 import EvidencePanel from '../components/EvidencePanel'
-import BlockingPanel from '../components/BlockingPanel'
 import AttributeTable from '../components/AttributeTable'
 import PartyAttributeTable from '../components/PartyAttributeTable'
 import EntityTableForCluster from '../components/EntityTableForCluster'
@@ -14,7 +13,7 @@ import EntityTableForCluster from '../components/EntityTableForCluster'
 export default function ClusterDetail() {
   const { clusterId } = useParams<{ clusterId: string }>()
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'entities' | 'evidence' | 'blocking'>('graph')
+  const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'entities' | 'evidence'>('graph')
 
   const { data: clusterDetail, isLoading, error } = useQuery({
     queryKey: ['cluster', clusterId],
@@ -52,7 +51,6 @@ export default function ClusterDetail() {
     ? clusterDetail.parties.find(p => p.party_id === selectedPartyId)
     : null
 
-  const hasConflicts = clusterDetail.blocking.length > 0
   const clusterPartyCount = clusterDetail.parties.filter(p => p.in_cluster).length
   const totalPartyCount = clusterDetail.parties.length
   
@@ -82,18 +80,11 @@ export default function ClusterDetail() {
                 </p>
                 <p className="text-xs text-gray-500">
                   {clusterPartyCount} cluster parties • {totalPartyCount} total parties • {clusterDetail.match_evidence.length} evidence
-                  {hasConflicts && <span className="text-red-600"> • {clusterDetail.blocking.length} conflicts</span>}
                 </p>
               </div>
             </div>
             
             <div className="flex items-center gap-2">
-              {hasConflicts && (
-                <div className="badge badge-danger">
-                  <ShieldExclamationIcon className="h-3 w-3 mr-1" />
-                  Conflicts
-                </div>
-              )}
             </div>
           </div>
 
@@ -138,14 +129,6 @@ export default function ClusterDetail() {
             >
               Evidence ({clusterDetail.match_evidence.length})
             </button>
-            <button
-              onClick={() => setActiveTab('blocking')}
-              className={`btn-secondary ${
-                activeTab === 'blocking' ? 'bg-red-600 text-white' : hasConflicts ? 'bg-red-100 text-red-700' : ''
-              }`}
-            >
-              Blocking ({clusterDetail.blocking.length})
-            </button>
           </div>
         </div>
       </div>
@@ -158,7 +141,7 @@ export default function ClusterDetail() {
                 <PartyGraph
                   parties={clusterDetail.parties}
                   matchEvidence={clusterDetail.match_evidence}
-                  blocking={clusterDetail.blocking}
+                  blocking={[]}
                   relationships={clusterDetail.relationships}
                   focusPartyId={null}
                   onPartySelect={setSelectedPartyId}
@@ -182,12 +165,6 @@ export default function ClusterDetail() {
               {activeTab === 'evidence' && (
                 <EvidencePanel
                   evidence={clusterDetail.match_evidence}
-                />
-              )}
-              {activeTab === 'blocking' && (
-                <BlockingPanel
-                  blocking={clusterDetail.blocking}
-                  parties={clusterDetail.parties}
                 />
               )}
             </div>
