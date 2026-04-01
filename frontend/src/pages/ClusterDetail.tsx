@@ -150,7 +150,7 @@ export default function ClusterDetail() {
                 <PartyGraph
                   parties={clusterDetail.parties}
                   matchEvidence={clusterDetail.match_evidence}
-                  blocking={clusterDetail.blocking}
+                  blocking={[]}
                   relationships={clusterDetail.relationships}
                   focusPartyId={null}
                   onPartySelect={setSelectedPartyId}
