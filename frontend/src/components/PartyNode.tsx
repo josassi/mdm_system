@@ -25,6 +25,13 @@ function PartyNode({ data }: { data: PartyNodeData }) {
     navigate(`/parties/${party.party_id}`)
   }
 
+  const handleClusterIdClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (party.cluster_id) {
+      navigate(`/clusters/${party.cluster_id}`)
+    }
+  }
+
   return (
     <div
       onClick={onClick}
@@ -86,7 +93,11 @@ function PartyNode({ data }: { data: PartyNodeData }) {
         </div>
         
         {party.cluster_id && (
-          <div className="font-mono text-[9px] text-gray-500 mb-1">
+          <div 
+            className="font-mono text-[9px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer mb-1"
+            onClick={handleClusterIdClick}
+            title="Click to view cluster details"
+          >
             Cluster: {party.cluster_id}
           </div>
         )}
