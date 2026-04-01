@@ -78,12 +78,18 @@ function PartyNode({ data }: { data: PartyNodeData }) {
         </div>
         
         <div 
-          className="font-mono text-[10px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer mb-1"
+          className="font-mono text-[10px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
           onClick={handlePartyIdClick}
           title="Click to view party details"
         >
           {party.party_id}
         </div>
+        
+        {party.cluster_id && (
+          <div className="font-mono text-[9px] text-gray-500 mb-1">
+            Cluster: {party.cluster_id}
+          </div>
+        )}
         
         <div className="border-t border-gray-200 pt-1 space-y-0.5">
           {displayAttrs.map((attr, idx) => (

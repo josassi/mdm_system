@@ -10,9 +10,9 @@ merge_threshold: 0.4  # Lower bar for aggregate scoring
 min_attribute_match_ratio: 0.2  # Accept 20%+ attribute agreement
 
 # Hard link tiered thresholds
-hard_link_tier1_ratio: 0.5   # HIGH confidence: >= 50% attribute match
-hard_link_tier2_ratio: 0.3   # MEDIUM confidence: 30-50% attribute match  
-hard_link_tier3_ratio: 0.15  # LOW confidence: 15-30% (still merge for analytics)
+hard_link_tier1_ratio: 0.4   # HIGH confidence: >= 40% attribute match
+hard_link_tier2_ratio: 0.2   # MEDIUM confidence: 20-40% attribute match  
+hard_link_tier3_ratio: 0.1   # LOW confidence: 10-20% (still merge for analytics)
 
 # Matching rules
 allow_soft_matches: true  # Include fuzzy matches, probabilistic evidence

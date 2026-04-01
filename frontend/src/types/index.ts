@@ -30,6 +30,7 @@ export interface Party {
   party_type: string
   source_system: string
   source_table: string
+  cluster_id?: string | null
   attributes: Attribute[]
   link_confidence?: string
   resolution_method?: string

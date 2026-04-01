@@ -386,11 +386,19 @@ def get_party_info(party_id):
     # Get attributes with sources
     attributes = get_party_attributes_with_sources(party_id)
     
+    # Get cluster_id for this party
+    cluster_info = data['party_cluster'][
+        (data['party_cluster']['party_id'] == party_id) &
+        (data['party_cluster']['rec_end_date'].isna())
+    ]
+    cluster_id = cluster_info.iloc[0]['cluster_id'] if len(cluster_info) > 0 else None
+    
     return {
         'party_id': party_id,
         'party_type': party_type,
         'source_system': system_name,
         'source_table': system_table_info['table_name'],
+        'cluster_id': cluster_id,
         'attributes': attributes
     }
 
