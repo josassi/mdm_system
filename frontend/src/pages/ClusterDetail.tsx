@@ -9,11 +9,12 @@ import EvidencePanel from '../components/EvidencePanel'
 import BlockingPanel from '../components/BlockingPanel'
 import AttributeTable from '../components/AttributeTable'
 import PartyAttributeTable from '../components/PartyAttributeTable'
+import EntityTableForCluster from '../components/EntityTableForCluster'
 
 export default function ClusterDetail() {
   const { clusterId } = useParams<{ clusterId: string }>()
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'evidence' | 'blocking'>('graph')
+  const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'entities' | 'evidence' | 'blocking'>('graph')
 
   const { data: clusterDetail, isLoading, error } = useQuery({
     queryKey: ['cluster', clusterId],
@@ -139,6 +140,14 @@ export default function ClusterDetail() {
               Parties
             </button>
             <button
+              onClick={() => setActiveTab('entities')}
+              className={`btn-secondary ${
+                activeTab === 'entities' ? 'bg-primary-600 text-white' : ''
+              }`}
+            >
+              Entities ({entityIds.length})
+            </button>
+            <button
               onClick={() => setActiveTab('evidence')}
               className={`btn-secondary ${
                 activeTab === 'evidence' ? 'bg-primary-600 text-white' : ''
@@ -179,6 +188,11 @@ export default function ClusterDetail() {
               )}
               {activeTab === 'parties' && (
                 <PartyAttributeTable
+                  parties={clusterDetail.parties}
+                />
+              )}
+              {activeTab === 'entities' && (
+                <EntityTableForCluster
                   parties={clusterDetail.parties}
                 />
               )}
