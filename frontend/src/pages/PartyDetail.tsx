@@ -3,17 +3,15 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeftIcon, ShieldExclamationIcon } from '@heroicons/react/24/outline'
 import { partyApi } from '../api/client'
-import PartyGraph from '../components/PartyGraph'
-import PartyAttributesPanel from '../components/PartyAttributesPanel'
 import EvidencePanel from '../components/EvidencePanel'
 import BlockingPanel from '../components/BlockingPanel'
 import AttributeTable from '../components/AttributeTable'
 import PartyAttributeTable from '../components/PartyAttributeTable'
+import ClusterTable from '../components/ClusterTable'
 
 export default function PartyDetail() {
   const { partyId } = useParams<{ partyId: string }>()
-  const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'graph' | 'attributes' | 'parties' | 'evidence' | 'blocking'>('graph')
+  const [activeTab, setActiveTab] = useState<'attributes' | 'parties' | 'clusters' | 'evidence' | 'blocking'>('attributes')
 
   const { data: partyDetail, isLoading, error } = useQuery({
     queryKey: ['party', partyId],
@@ -46,10 +44,6 @@ export default function PartyDetail() {
       </div>
     )
   }
-
-  const selectedParty = selectedPartyId 
-    ? partyDetail.parties.find(p => p.party_id === selectedPartyId)
-    : null
 
   const hasConflicts = partyDetail.blocking.length > 0
   const focusParty = partyDetail.parties.find(p => p.is_focus)
@@ -104,14 +98,6 @@ export default function PartyDetail() {
 
           <div className="flex gap-1 mt-1">
             <button
-              onClick={() => setActiveTab('graph')}
-              className={`btn-secondary ${
-                activeTab === 'graph' ? 'bg-primary-600 text-white' : ''
-              }`}
-            >
-              Graph
-            </button>
-            <button
               onClick={() => setActiveTab('attributes')}
               className={`btn-secondary ${
                 activeTab === 'attributes' ? 'bg-primary-600 text-white' : ''
@@ -126,6 +112,14 @@ export default function PartyDetail() {
               }`}
             >
               Parties
+            </button>
+            <button
+              onClick={() => setActiveTab('clusters')}
+              className={`btn-secondary ${
+                activeTab === 'clusters' ? 'bg-primary-600 text-white' : ''
+              }`}
+            >
+              Clusters
             </button>
             <button
               onClick={() => setActiveTab('evidence')}
@@ -149,18 +143,8 @@ export default function PartyDetail() {
 
       <div className="flex-1 overflow-hidden">
         <div className="h-full px-2 py-1">
-          <div className="h-full flex gap-2">
-            <div className="flex-1 card overflow-hidden flex flex-col">
-              {activeTab === 'graph' && (
-                <PartyGraph
-                  parties={partyDetail.parties}
-                  matchEvidence={partyDetail.match_evidence}
-                  blocking={partyDetail.blocking}
-                  relationships={partyDetail.relationships}
-                  focusPartyId={partyId!}
-                  onPartySelect={setSelectedPartyId}
-                />
-              )}
+          <div className="h-full">
+            <div className="h-full card overflow-hidden flex flex-col">
               {activeTab === 'attributes' && (
                 <AttributeTable
                   parties={partyDetail.parties}
@@ -168,6 +152,11 @@ export default function PartyDetail() {
               )}
               {activeTab === 'parties' && (
                 <PartyAttributeTable
+                  parties={partyDetail.parties}
+                />
+              )}
+              {activeTab === 'clusters' && (
+                <ClusterTable
                   parties={partyDetail.parties}
                 />
               )}
@@ -183,15 +172,6 @@ export default function PartyDetail() {
                 />
               )}
             </div>
-
-            {selectedParty && activeTab === 'graph' && (
-              <div className="w-80 flex-shrink-0">
-                <PartyAttributesPanel
-                  party={selectedParty}
-                  onClose={() => setSelectedPartyId(null)}
-                />
-              </div>
-            )}
           </div>
         </div>
       </div>
