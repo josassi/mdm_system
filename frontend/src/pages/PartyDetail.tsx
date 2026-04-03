@@ -1,17 +1,17 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeftIcon, ShieldExclamationIcon } from '@heroicons/react/24/outline'
 import { partyApi } from '../api/client'
 import EvidencePanel from '../components/EvidencePanel'
 import BlockingPanel from '../components/BlockingPanel'
-import AttributeTable from '../components/AttributeTable'
+import PartyAttributeDetail from '../components/PartyAttributeDetail'
 import ClusterTable from '../components/ClusterTable'
-import EntityTableForCluster from '../components/EntityTableForCluster'
+import EntityDetail from '../components/EntityDetail'
 
 export default function PartyDetail() {
   const { partyId } = useParams<{ partyId: string }>()
-  const [activeTab, setActiveTab] = useState<'attributes' | 'entities' | 'clusters' | 'evidence' | 'blocking'>('attributes')
+  const [activeTab, setActiveTab] = useState<'attributes' | 'entity' | 'clusters' | 'evidence' | 'blocking'>('attributes')
 
   const { data: partyDetail, isLoading, error } = useQuery({
     queryKey: ['party', partyId],
@@ -45,8 +45,22 @@ export default function PartyDetail() {
     )
   }
 
-  const hasConflicts = partyDetail.blocking.length > 0
   const focusParty = partyDetail.parties.find(p => p.is_focus)
+  
+  // Filter evidence and blocking to only include items with this party
+  const filteredEvidence = useMemo(() => {
+    return partyDetail.match_evidence.filter(ev => 
+      ev.party_id_1 === partyId || ev.party_id_2 === partyId
+    )
+  }, [partyDetail.match_evidence, partyId])
+  
+  const filteredBlocking = useMemo(() => {
+    return partyDetail.blocking.filter(block => 
+      block.party_id_1 === partyId || block.party_id_2 === partyId
+    )
+  }, [partyDetail.blocking, partyId])
+  
+  const hasConflicts = filteredBlocking.length > 0
   const clusterPartyCount = partyDetail.parties.filter(p => p.in_cluster).length
   const entityPartyCount = partyDetail.parties.filter(p => p.in_entity).length
 
@@ -67,8 +81,8 @@ export default function PartyDetail() {
                   {partyId}
                 </p>
                 <p className="text-xs text-gray-500">
-                  Cluster: {clusterPartyCount} parties • Entity: {entityPartyCount} parties • {partyDetail.match_evidence.length} evidence
-                  {hasConflicts && <span className="text-red-600"> • {partyDetail.blocking.length} conflicts</span>}
+                  Cluster: {clusterPartyCount} parties • Entity: {entityPartyCount} parties • {filteredEvidence.length} evidence
+                  {hasConflicts && <span className="text-red-600"> • {filteredBlocking.length} conflicts</span>}
                 </p>
               </div>
             </div>
@@ -106,12 +120,12 @@ export default function PartyDetail() {
               Attributes
             </button>
             <button
-              onClick={() => setActiveTab('entities')}
+              onClick={() => setActiveTab('entity')}
               className={`btn-secondary ${
-                activeTab === 'entities' ? 'bg-primary-600 text-white' : ''
+                activeTab === 'entity' ? 'bg-primary-600 text-white' : ''
               }`}
             >
-              Entities
+              Entity
             </button>
             <button
               onClick={() => setActiveTab('clusters')}
@@ -127,7 +141,7 @@ export default function PartyDetail() {
                 activeTab === 'evidence' ? 'bg-primary-600 text-white' : ''
               }`}
             >
-              Evidence ({partyDetail.match_evidence.length})
+              Evidence ({filteredEvidence.length})
             </button>
             <button
               onClick={() => setActiveTab('blocking')}
@@ -135,7 +149,7 @@ export default function PartyDetail() {
                 activeTab === 'blocking' ? 'bg-red-600 text-white' : hasConflicts ? 'bg-red-100 text-red-700' : ''
               }`}
             >
-              Blocking ({partyDetail.blocking.length})
+              Blocking ({filteredBlocking.length})
             </button>
           </div>
         </div>
@@ -145,13 +159,14 @@ export default function PartyDetail() {
         <div className="h-full px-2 py-1">
           <div className="h-full">
             <div className="h-full card overflow-hidden flex flex-col">
-              {activeTab === 'attributes' && (
-                <AttributeTable
-                  parties={partyDetail.parties}
+              {activeTab === 'attributes' && focusParty && (
+                <PartyAttributeDetail
+                  party={focusParty}
                 />
               )}
-              {activeTab === 'entities' && (
-                <EntityTableForCluster
+              {activeTab === 'entity' && (
+                <EntityDetail
+                  entityId={partyDetail.entity_id}
                   parties={partyDetail.parties}
                 />
               )}
@@ -162,12 +177,12 @@ export default function PartyDetail() {
               )}
               {activeTab === 'evidence' && (
                 <EvidencePanel
-                  evidence={partyDetail.match_evidence}
+                  evidence={filteredEvidence}
                 />
               )}
               {activeTab === 'blocking' && (
                 <BlockingPanel
-                  blocking={partyDetail.blocking}
+                  blocking={filteredBlocking}
                   parties={partyDetail.parties}
                 />
               )}
