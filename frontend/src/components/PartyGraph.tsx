@@ -158,7 +158,9 @@ export default function PartyGraph({
         labelBgColor = '#ffedd5'
       }
       
-      const relationshipLabel = rel.metadata_relationship_id.replace('REL_', '').replace(/_/g, ' ')
+      const relationshipLabel = rel.metadata_relationship_id 
+        ? rel.metadata_relationship_id.replace('REL_', '').replace(/_/g, ' ')
+        : 'RELATIONSHIP'
       
       newEdges.push({
         id: `rel-${rel.relationship_id}`,
