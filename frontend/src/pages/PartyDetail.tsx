@@ -19,7 +19,7 @@ export default function PartyDetail() {
     enabled: !!partyId,
   })
 
-  // Filter evidence and blocking to only include items with this party
+  // Filter to show ONLY evidence and blocking involving this specific party
   // Must be before early returns to maintain hook order
   const filteredEvidence = useMemo(() => {
     if (!partyDetail) return []
@@ -62,7 +62,7 @@ export default function PartyDetail() {
   }
 
   const focusParty = partyDetail.parties.find(p => p.is_focus)
-  const hasConflicts = filteredBlocking.length > 0
+  const hasBlockings = filteredBlocking.length > 0
   const clusterPartyCount = partyDetail.parties.filter(p => p.in_cluster).length
   const entityPartyCount = partyDetail.parties.filter(p => p.in_entity).length
 
@@ -83,17 +83,19 @@ export default function PartyDetail() {
                   {partyId}
                 </p>
                 <p className="text-xs text-gray-500">
-                  Cluster: {clusterPartyCount} parties • Entity: {entityPartyCount} parties • {filteredEvidence.length} evidence
-                  {hasConflicts && <span className="text-red-600"> • {filteredBlocking.length} conflicts</span>}
+                  Cluster: {clusterPartyCount} parties • Entity: {entityPartyCount} parties • {filteredEvidence.length} evidence • {filteredBlocking.length} blockings
                 </p>
               </div>
             </div>
             
             <div className="flex items-center gap-2">
               {partyDetail.cluster_id && (
-                <div className="badge bg-blue-100 text-blue-700 text-xs">
-                  Cluster
-                </div>
+                <Link 
+                  to={`/clusters/${partyDetail.cluster_id}`}
+                  className="badge bg-blue-100 text-blue-700 text-xs hover:bg-blue-200"
+                >
+                  View Cluster
+                </Link>
               )}
               {partyDetail.entity_id && (
                 <Link 
@@ -103,10 +105,10 @@ export default function PartyDetail() {
                   View Entity
                 </Link>
               )}
-              {hasConflicts && (
-                <div className="badge badge-danger">
+              {hasBlockings && (
+                <div className="badge bg-blue-100 text-blue-700">
                   <ShieldExclamationIcon className="h-3 w-3 mr-1" />
-                  Conflicts
+                  Blockings
                 </div>
               )}
             </div>
@@ -135,7 +137,7 @@ export default function PartyDetail() {
                 activeTab === 'clusters' ? 'bg-primary-600 text-white' : ''
               }`}
             >
-              Clusters
+              Cluster
             </button>
             <button
               onClick={() => setActiveTab('evidence')}
@@ -148,7 +150,7 @@ export default function PartyDetail() {
             <button
               onClick={() => setActiveTab('blocking')}
               className={`btn-secondary ${
-                activeTab === 'blocking' ? 'bg-red-600 text-white' : hasConflicts ? 'bg-red-100 text-red-700' : ''
+                activeTab === 'blocking' ? 'bg-primary-600 text-white' : ''
               }`}
             >
               Blocking ({filteredBlocking.length})
@@ -175,6 +177,7 @@ export default function PartyDetail() {
               {activeTab === 'clusters' && (
                 <ClusterTable
                   parties={partyDetail.parties}
+                  hidePartiesInEntity={true}
                 />
               )}
               {activeTab === 'evidence' && (
@@ -186,6 +189,7 @@ export default function PartyDetail() {
                 <BlockingPanel
                   blocking={filteredBlocking}
                   parties={partyDetail.parties}
+                  neutralMode={true}
                 />
               )}
             </div>

@@ -4,6 +4,7 @@ import type { Party } from '../types'
 
 interface ClusterTableProps {
   parties: Party[]
+  hidePartiesInEntity?: boolean
 }
 
 interface ClusterStats {
@@ -14,7 +15,7 @@ interface ClusterStats {
   party_types: string[]
 }
 
-export default function ClusterTable({ parties }: ClusterTableProps) {
+export default function ClusterTable({ parties, hidePartiesInEntity = false }: ClusterTableProps) {
   const clusterStats = useMemo(() => {
     // Group parties by cluster_id
     const clusterMap = new Map<string, Party[]>()
@@ -69,9 +70,11 @@ export default function ClusterTable({ parties }: ClusterTableProps) {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Cluster ID
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Parties in Entity
-              </th>
+              {!hidePartiesInEntity && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Parties in Entity
+                </th>
+              )}
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Parties
               </th>
@@ -94,16 +97,18 @@ export default function ClusterTable({ parties }: ClusterTableProps) {
                     {cluster.cluster_id}
                   </Link>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <span className="text-sm font-semibold text-gray-900">
-                      {cluster.parties_in_entity}
-                    </span>
-                    <span className="ml-2 text-xs text-gray-500">
-                      ({((cluster.parties_in_entity / cluster.total_parties) * 100).toFixed(0)}%)
-                    </span>
-                  </div>
-                </td>
+                {!hidePartiesInEntity && (
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {cluster.parties_in_entity}
+                      </span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({((cluster.parties_in_entity / cluster.total_parties) * 100).toFixed(0)}%)
+                      </span>
+                    </div>
+                  </td>
+                )}
                 <td className="px-4 py-3 whitespace-nowrap">
                   <span className="text-sm text-gray-700">
                     {cluster.total_parties}
