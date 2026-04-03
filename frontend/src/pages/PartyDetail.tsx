@@ -19,6 +19,22 @@ export default function PartyDetail() {
     enabled: !!partyId,
   })
 
+  // Filter evidence and blocking to only include items with this party
+  // Must be before early returns to maintain hook order
+  const filteredEvidence = useMemo(() => {
+    if (!partyDetail) return []
+    return partyDetail.match_evidence.filter(ev => 
+      ev.party_id_1 === partyId || ev.party_id_2 === partyId
+    )
+  }, [partyDetail, partyId])
+  
+  const filteredBlocking = useMemo(() => {
+    if (!partyDetail) return []
+    return partyDetail.blocking.filter(block => 
+      block.party_id_1 === partyId || block.party_id_2 === partyId
+    )
+  }, [partyDetail, partyId])
+
   if (isLoading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -46,20 +62,6 @@ export default function PartyDetail() {
   }
 
   const focusParty = partyDetail.parties.find(p => p.is_focus)
-  
-  // Filter evidence and blocking to only include items with this party
-  const filteredEvidence = useMemo(() => {
-    return partyDetail.match_evidence.filter(ev => 
-      ev.party_id_1 === partyId || ev.party_id_2 === partyId
-    )
-  }, [partyDetail.match_evidence, partyId])
-  
-  const filteredBlocking = useMemo(() => {
-    return partyDetail.blocking.filter(block => 
-      block.party_id_1 === partyId || block.party_id_2 === partyId
-    )
-  }, [partyDetail.blocking, partyId])
-  
   const hasConflicts = filteredBlocking.length > 0
   const clusterPartyCount = partyDetail.parties.filter(p => p.in_cluster).length
   const entityPartyCount = partyDetail.parties.filter(p => p.in_entity).length
