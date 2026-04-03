@@ -6,12 +6,12 @@ import { partyApi } from '../api/client'
 import EvidencePanel from '../components/EvidencePanel'
 import BlockingPanel from '../components/BlockingPanel'
 import AttributeTable from '../components/AttributeTable'
-import PartyAttributeTable from '../components/PartyAttributeTable'
 import ClusterTable from '../components/ClusterTable'
+import EntityTableForCluster from '../components/EntityTableForCluster'
 
 export default function PartyDetail() {
   const { partyId } = useParams<{ partyId: string }>()
-  const [activeTab, setActiveTab] = useState<'attributes' | 'parties' | 'clusters' | 'evidence' | 'blocking'>('attributes')
+  const [activeTab, setActiveTab] = useState<'attributes' | 'entities' | 'clusters' | 'evidence' | 'blocking'>('attributes')
 
   const { data: partyDetail, isLoading, error } = useQuery({
     queryKey: ['party', partyId],
@@ -106,12 +106,12 @@ export default function PartyDetail() {
               Attributes
             </button>
             <button
-              onClick={() => setActiveTab('parties')}
+              onClick={() => setActiveTab('entities')}
               className={`btn-secondary ${
-                activeTab === 'parties' ? 'bg-primary-600 text-white' : ''
+                activeTab === 'entities' ? 'bg-primary-600 text-white' : ''
               }`}
             >
-              Parties
+              Entities
             </button>
             <button
               onClick={() => setActiveTab('clusters')}
@@ -150,8 +150,8 @@ export default function PartyDetail() {
                   parties={partyDetail.parties}
                 />
               )}
-              {activeTab === 'parties' && (
-                <PartyAttributeTable
+              {activeTab === 'entities' && (
+                <EntityTableForCluster
                   parties={partyDetail.parties}
                 />
               )}

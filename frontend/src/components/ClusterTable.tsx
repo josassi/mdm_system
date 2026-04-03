@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import type { Party } from '../types'
 
 interface ClusterTableProps {
@@ -86,9 +87,12 @@ export default function ClusterTable({ parties }: ClusterTableProps) {
             {clusterStats.map((cluster) => (
               <tr key={cluster.cluster_id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="font-mono text-sm text-gray-900">
+                  <Link
+                    to={`/clusters/${cluster.cluster_id}`}
+                    className="font-mono text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  >
                     {cluster.cluster_id}
-                  </div>
+                  </Link>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex items-center">

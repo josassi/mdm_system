@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { MagnifyingGlassIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import type { Party } from '../types'
 
@@ -174,7 +175,14 @@ export default function PartyAttributeTable({ parties }: PartyAttributeTableProp
           <tbody>
             {filteredAndSortedRows.map((row) => (
               <tr key={row.party_id}>
-                <td className="font-mono text-xs font-medium text-gray-900">{row.party_id}</td>
+                <td>
+                  <Link
+                    to={`/parties/${row.party_id}`}
+                    className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    {row.party_id}
+                  </Link>
+                </td>
                 <td className="text-sm text-gray-700">{row.source_system}</td>
                 <td className="text-sm text-gray-700">{row.source_table}</td>
                 <td className="text-center">
