@@ -349,6 +349,127 @@ def get_entity_detail(entity_id):
     })
 
 
+@app.route('/api/parties', methods=['GET'])
+def get_parties():
+    """Get list of all parties with summary statistics"""
+    parties_list = []
+    
+    for idx, party in data['source_party'].iterrows():
+        try:
+            party_id = party['source_party_id']
+            
+            # Get party type
+            party_type = data['metadata_party_type'][
+                data['metadata_party_type']['party_type_id'] == party['party_type_id']
+            ].iloc[0]['party_type']
+            
+            # Get source system and table
+            system_table_info = data['metadata_system_table'][
+                data['metadata_system_table']['system_table_id'] == party['system_table_id']
+            ].iloc[0]
+            
+            system_info = data['metadata_system'][
+                data['metadata_system']['system_id'] == system_table_info['system_id']
+            ]
+            system_name = system_info.iloc[0]['system_name'] if len(system_info) > 0 else 'Unknown'
+            
+            # Get cluster info
+            cluster_info = data['party_cluster'][
+                (data['party_cluster']['party_id'] == party_id) &
+                (data['party_cluster']['rec_end_date'].isna())
+            ]
+            cluster_id = cluster_info.iloc[0]['cluster_id'] if len(cluster_info) > 0 else None
+            
+            # Get entity info
+            entity_link = data['party_to_entity_link'][
+                data['party_to_entity_link']['party_id'] == party_id
+            ]
+            
+            entity_id = None
+            entity_party_count = 0
+            match_score = None
+            
+            if len(entity_link) > 0:
+                try:
+                    entity_id = entity_link.iloc[0]['master_entity_id']
+                    
+                    # Get all other parties in same entity
+                    entity_parties = data['party_to_entity_link'][
+                        data['party_to_entity_link']['master_entity_id'] == entity_id
+                    ]
+                    entity_party_count = len(entity_parties)
+                    
+                    # Calculate average match score with other parties in entity
+                    other_party_ids = [pid for pid in entity_parties['party_id'].tolist() if pid != party_id]
+                    
+                    if len(other_party_ids) > 0:
+                        match_scores = []
+                        for other_party_id in other_party_ids:
+                            # Get match evidence between this party and other party
+                            evidence = data['match_evidence'][
+                                (((data['match_evidence']['party_id_1'] == party_id) & 
+                                  (data['match_evidence']['party_id_2'] == other_party_id)) |
+                                 ((data['match_evidence']['party_id_1'] == other_party_id) & 
+                                  (data['match_evidence']['party_id_2'] == party_id)))
+                            ]
+                            
+                            # Calculate match score for this pair if evidence exists
+                            if len(evidence) > 0:
+                                pair_score = evidence['match_score'].mean()
+                                match_scores.append(pair_score)
+                        
+                        # Average of all pairwise scores
+                        if len(match_scores) > 0:
+                            match_score = float(sum(match_scores) / len(match_scores))
+                    else:
+                        # Single party entity - use confidence score
+                        match_score = float(entity_link.iloc[0]['confidence_score'])
+                except Exception as e:
+                    print(f"Error calculating match score for party {party_id}: {e}")
+                    # Continue processing party even if match score calculation fails
+                    match_score = None
+            
+            # Get basic attributes
+            attrs = get_party_attributes_dict(party_id)
+            
+            # Extract key attributes for display
+            name_parts = []
+            if 'ATTR_FIRST_NAME' in attrs:
+                name_parts.append(attrs['ATTR_FIRST_NAME'])
+            if 'ATTR_LAST_NAME' in attrs:
+                name_parts.append(attrs['ATTR_LAST_NAME'])
+            display_name = ' '.join(name_parts) if name_parts else None
+            
+            dob = attrs.get('ATTR_DOB')
+            email = attrs.get('ATTR_EMAIL')
+            phone = attrs.get('ATTR_PHONE')
+            gov_id = attrs.get('ATTR_GOV_ID')
+            
+            parties_list.append({
+                'party_id': party_id,
+                'party_type': party_type,
+                'source_system': system_name,
+                'source_table': system_table_info['table_name'],
+                'cluster_id': cluster_id,
+                'entity_id': entity_id,
+                'entity_party_count': entity_party_count,
+                'match_score': match_score,
+                'display_name': display_name,
+                'dob': dob,
+                'email': email,
+                'phone': phone,
+                'gov_id': gov_id,
+                'attribute_count': len(attrs)
+            })
+        except Exception as e:
+            print(f"Error processing party {party_id} at index {idx}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    return jsonify(parties_list)
+
+
 @app.route('/api/parties/<party_id>', methods=['GET'])
 def get_party(party_id):
     """Get detailed information about a specific party"""

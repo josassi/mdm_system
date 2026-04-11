@@ -44,7 +44,29 @@ export const entityApi = {
   },
 }
 
+export interface PartySummary {
+  party_id: string
+  party_type: string
+  source_system: string
+  source_table: string
+  cluster_id: string | null
+  entity_id: string | null
+  entity_party_count: number
+  match_score: number | null
+  display_name: string | null
+  dob: string | null
+  email: string | null
+  phone: string | null
+  gov_id: string | null
+  attribute_count: number
+}
+
 export const partyApi = {
+  getParties: async (): Promise<PartySummary[]> => {
+    const { data } = await api.get('/parties')
+    return data
+  },
+
   getPartyDetail: async (partyId: string): Promise<PartyDetail> => {
     const { data } = await api.get(`/parties/${partyId}/detail`)
     return data
