@@ -1,0 +1,4 @@
+app_id,quote_id,application_date,status,contract_number,applicant_first_name,applicant_last_name,applicant_dob,applicant_email,applicant_phone,applicant_gov_id,spouse_first_name,spouse_last_name,spouse_dob,spouse_email,spouse_phone,spouse_gov_id,created_date,source_system
+A010,Q010,2024-10-25,Approved,C011,Jonathan,Martinez,1987-02-18,susan.martinez@email.com,+852-9999-8888,E123456(7),,,,,,,2024-01-25,SmartPlus
+A014,Q014,2024-03-05,Approved,C014,ComplexTest,Person,1985-04-04,complex@email.com,+852-9144-4444,C140000(0),,,,,,,2024-01-25,SmartPlus
+A018,Q018B,2024-01-22,Approved,C018,FKChange,Person,1985-06-06,fkchange@email.com,+852-9166-6666,F180000(0),,,,,,,2024-01-25,SmartPlus

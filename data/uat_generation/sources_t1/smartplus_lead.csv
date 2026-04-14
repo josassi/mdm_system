@@ -1,0 +1,9 @@
+lead_id,first_name,last_name,date_of_birth,email,phone,address,gov_id_type,gov_id_number,created_date,source_system,is_deleted
+L100,NewLead,Person,1990-01-01,newlead@test.com,+852-9100-0000,Test Address 100,HKID,Z100000(0),2026-04-15,SmartPlus,
+L002,Sarah,Lee,1982-03-20,sarah.lee@email.com,+852-9234-5678,"Unit 12B, 456 Nathan Road, Kowloon, HK",HKID,B234567(8),2024-01-25,SmartPlus,True
+L001,John,Smith,1985-06-15,john.smith@email.com,+852-9999-9999,"Flat 5A, 123 Queen's Road, Central, HK",HKID,A123456(7),2024-01-25,SmartPlus,
+L009,Alice,Chen,1988-05-10,alice.new@email.com,+852-9123-4567,Test Address 9,HKID,A900000(9),2024-01-25,SmartPlus,
+L011,NullTest,Person,1985-01-01,nulltest@email.com,+852-9111-1111,,HKID,N110000(0),2024-01-25,SmartPlus,
+L012,RemoveAttr,Person,1985-02-02,removeattr@email.com,+852-9122-2222,,HKID,R120000(0),2024-01-25,SmartPlus,
+L024,Rapid,Changes,1985-08-08,rapid.new@email.com,+852-9188-8888,Test Address 24,HKID,R240000(0),2024-01-25,SmartPlus,
+L027,王小華,Unicode,1985-11-11,unicode@email.com,+852-9211-1111,香港中環皇后大道中123號,HKID,U270000(0),2024-01-25,SmartPlus,

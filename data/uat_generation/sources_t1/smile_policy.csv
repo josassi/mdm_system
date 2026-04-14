@@ -1,0 +1,2 @@
+policy_id,contract_number,application_id,policy_type,start_date,end_date,status,annual_premium,created_date,source_system
+P003,C003,A003,Family,2024-04-01,,Active,12000.0,2026-04-15,Smile
