@@ -8,12 +8,13 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import uuid
+import sys
 
 
 class BronzeRawAttributeIngestion:
     """Ingests source attributes into RAW_ATTRIBUTE table using metadata-driven logic"""
     
-    def __init__(self, metadata_dir=None, source_data_dir=None, bronze_dir=None):
+    def __init__(self, metadata_dir=None, source_data_dir=None, bronze_dir=None, incremental=False):
         # Default to project root paths
         project_root = Path(__file__).parent.parent.parent
         self.metadata_dir = Path(metadata_dir) if metadata_dir else project_root / 'data' / 'uat_generation' / 'metadata'
@@ -25,8 +26,11 @@ class BronzeRawAttributeIngestion:
         self.metadata_party_type = None
         self.metadata_column = None
         self.source_party = None
+        self.existing_raw_attribute = None  # For SCD2 incremental
         
+        self.incremental = incremental
         self.raw_attribute_records = []
+        self.ingestion_timestamp = datetime.now()
         
     def load_metadata(self):
         """Load all required metadata tables"""
@@ -55,6 +59,24 @@ class BronzeRawAttributeIngestion:
         
         self.source_party = pd.read_csv(source_party_file)
         print(f"  ✓ Loaded {len(self.source_party)} SOURCE_PARTY records")
+    
+    def load_existing_raw_attribute(self):
+        """Load existing RAW_ATTRIBUTE for SCD2 incremental processing"""
+        raw_attr_file = self.bronze_dir / 'raw_attribute.csv'
+        
+        if raw_attr_file.exists():
+            self.existing_raw_attribute = pd.read_csv(raw_attr_file)
+            # Convert date columns to datetime for comparison
+            if 'rec_start_date' in self.existing_raw_attribute.columns:
+                self.existing_raw_attribute['rec_start_date'] = pd.to_datetime(self.existing_raw_attribute['rec_start_date'], format='ISO8601')
+            if 'rec_end_date' in self.existing_raw_attribute.columns:
+                self.existing_raw_attribute['rec_end_date'] = pd.to_datetime(self.existing_raw_attribute['rec_end_date'], format='ISO8601')
+            
+            print(f"\nLoading existing RAW_ATTRIBUTE for incremental processing...")
+            print(f"  ✓ Loaded {len(self.existing_raw_attribute)} existing RAW_ATTRIBUTE records")
+        else:
+            print(f"\nNo existing RAW_ATTRIBUTE found - will create initial version")
+            self.existing_raw_attribute = pd.DataFrame()
     
     def get_system_table_info(self, system_table_id):
         """Get system name and table name from system_table_id"""
@@ -187,23 +209,16 @@ class BronzeRawAttributeIngestion:
                     
                     # Skip NULL/NaN values
                     if pd.isna(raw_value):
+                        # NULL value - check if we need to close existing attribute (value removal)
+                        if self.incremental and not self.existing_raw_attribute.empty:
+                            self.close_existing_attribute(source_party_id, column_id)
                         continue
                     
-                    # Create RAW_ATTRIBUTE record
-                    raw_attribute_id = f"RA_{source_party_id}_{column_name}"
-                    
-                    raw_attribute_record = {
-                        'raw_attribute_id': raw_attribute_id,
-                        'source_party_id': source_party_id,
-                        'column_id': column_id,
-                        'raw_value': str(raw_value),
-                        'ingestion_timestamp': ingestion_timestamp
-                    }
-                    
-                    self.raw_attribute_records.append(raw_attribute_record)
+                    # Process attribute with SCD2 logic
+                    self.process_attribute_scd2(source_party_id, column_id, column_name, str(raw_value))
                     attributes_created += 1
         
-        print(f"  ✓ Created {attributes_created} RAW_ATTRIBUTE records from {len(df)} rows")
+        print(f"  ✓ Processed {attributes_created} RAW_ATTRIBUTE records from {len(df)} rows")
     
     def ingest_all_sources(self):
         """Ingest attributes from all source tables that contain party data"""
@@ -219,39 +234,156 @@ class BronzeRawAttributeIngestion:
         for system, table, filename in source_tables:
             self.ingest_source_table(system, table, filename)
     
+    def close_existing_attribute(self, source_party_id, column_id):
+        """Close existing RAW_ATTRIBUTE record (value removed - NULL in delta)"""
+        if self.existing_raw_attribute.empty:
+            return
+        
+        # Find current version (rec_end_date is NULL)
+        current_version = self.existing_raw_attribute[
+            (self.existing_raw_attribute['source_party_id'] == source_party_id) &
+            (self.existing_raw_attribute['column_id'] == column_id) &
+            (self.existing_raw_attribute['rec_end_date'].isna())
+        ]
+        
+        if not current_version.empty:
+            # Close it by setting rec_end_date
+            idx = current_version.index[0]
+            self.existing_raw_attribute.at[idx, 'rec_end_date'] = self.ingestion_timestamp
+    
+    def process_attribute_scd2(self, source_party_id, column_id, column_name, raw_value):
+        """
+        Process attribute with SCD2 logic:
+        - If incremental and attribute exists: close old version, create new version
+        - If new: create with rec_start_date = now, rec_end_date = NULL
+        """
+        # Check if this attribute already exists (current version)
+        existing_match = None
+        if self.incremental and not self.existing_raw_attribute.empty:
+            existing_match = self.existing_raw_attribute[
+                (self.existing_raw_attribute['source_party_id'] == source_party_id) &
+                (self.existing_raw_attribute['column_id'] == column_id) &
+                (self.existing_raw_attribute['rec_end_date'].isna())
+            ]
+        
+        if existing_match is not None and not existing_match.empty:
+            # Attribute exists - check if value changed
+            old_value = existing_match.iloc[0]['raw_value']
+            
+            if str(old_value) == str(raw_value):
+                # No change - don't create new version, just keep existing
+                return
+            
+            # Value changed - close old version
+            idx = existing_match.index[0]
+            self.existing_raw_attribute.at[idx, 'rec_end_date'] = self.ingestion_timestamp
+            
+            # Create new version with incremented ID
+            old_id = existing_match.iloc[0]['raw_attribute_id']
+            # Generate new version ID
+            if '_v' in old_id:
+                # Already versioned: RA_SP_L001_email_v2 -> increment
+                base_id, version = old_id.rsplit('_v', 1)
+                new_version = int(version) + 1
+                raw_attribute_id = f"{base_id}_v{new_version}"
+            else:
+                # First version: RA_SP_L001_email -> RA_SP_L001_email_v2
+                raw_attribute_id = f"{old_id}_v2"
+        else:
+            # New attribute - create with base ID
+            raw_attribute_id = f"RA_{source_party_id}_{column_name}"
+        
+        # Create RAW_ATTRIBUTE record with SCD2 columns
+        raw_attribute_record = {
+            'raw_attribute_id': raw_attribute_id,
+            'source_party_id': source_party_id,
+            'column_id': column_id,
+            'raw_value': raw_value,
+            'ingestion_timestamp': self.ingestion_timestamp.isoformat(),
+            'rec_start_date': self.ingestion_timestamp.isoformat(),
+            'rec_end_date': None
+        }
+        
+        self.raw_attribute_records.append(raw_attribute_record)
+    
     def export_raw_attribute(self):
-        """Export RAW_ATTRIBUTE table to CSV"""
-        df = pd.DataFrame(self.raw_attribute_records)
+        """Export RAW_ATTRIBUTE table to CSV with SCD2 history"""
+        # Combine existing (with updates) + new records
+        if self.incremental and not self.existing_raw_attribute.empty:
+            # Convert existing to dict records
+            existing_records = self.existing_raw_attribute.to_dict('records')
+            all_records = existing_records + self.raw_attribute_records
+            df = pd.DataFrame(all_records)
+        else:
+            df = pd.DataFrame(self.raw_attribute_records)
+        
         output_file = self.bronze_dir / 'raw_attribute.csv'
         df.to_csv(output_file, index=False)
         
         print(f"\n{'='*70}")
-        print(f"✓ Exported RAW_ATTRIBUTE: {len(df)} records")
+        print(f"✓ Exported RAW_ATTRIBUTE: {len(df)} total records")
         print(f"  File: {output_file}")
+        
+        # SCD2 statistics
+        if 'rec_end_date' in df.columns:
+            current_count = df['rec_end_date'].isna().sum()
+            historical_count = df['rec_end_date'].notna().sum()
+            print(f"\nSCD2 Statistics:")
+            print(f"  Current versions:    {current_count:>5}")
+            print(f"  Historical versions: {historical_count:>5}")
+            print(f"  Total records:       {len(df):>5}")
         
         # Print summary by source table
         print(f"\nBreakdown by source_party_id prefix:")
         
-        # Count by table
-        df['table_prefix'] = df['source_party_id'].str.split('_').str[2]
-        counts = df['table_prefix'].value_counts()
-        for table, count in counts.items():
-            print(f"  {table:<20} {count:>5} attributes")
+        # Count by table (current versions only)
+        current_df = df[df['rec_end_date'].isna()] if 'rec_end_date' in df.columns else df
+        if not current_df.empty:
+            current_df['table_prefix'] = current_df['source_party_id'].str.split('_').str[2]
+            counts = current_df['table_prefix'].value_counts()
+            for table, count in counts.items():
+                print(f"  {table:<20} {count:>5} current attributes")
     
     def run(self):
-        """Execute full RAW_ATTRIBUTE ingestion"""
+        """Execute RAW_ATTRIBUTE ingestion (full or incremental)"""
         print("="*70)
-        print("BRONZE LAYER INGESTION - RAW_ATTRIBUTE")
+        print(f"BRONZE LAYER INGESTION - RAW_ATTRIBUTE ({'INCREMENTAL' if self.incremental else 'FULL'})")
         print("="*70)
         
         self.load_metadata()
         self.load_source_party()
+        
+        if self.incremental:
+            self.load_existing_raw_attribute()
+        
         self.ingest_all_sources()
         self.export_raw_attribute()
         
-        print("\n✓ Bronze RAW_ATTRIBUTE ingestion complete")
+        print(f"\n✓ Bronze RAW_ATTRIBUTE ingestion complete ({'incremental' if self.incremental else 'full'})")
 
 
 if __name__ == '__main__':
-    ingestion = BronzeRawAttributeIngestion()
+    # Parse command line arguments
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Bronze RAW_ATTRIBUTE Ingestion')
+    parser.add_argument('--source', type=str, default='sources',
+                        help='Source directory name (e.g., sources, sources_t1, sources_t2)')
+    parser.add_argument('--incremental', action='store_true',
+                        help='Run in incremental mode (SCD2)')
+    
+    args = parser.parse_args()
+    
+    # Set source directory
+    project_root = Path(__file__).parent.parent.parent
+    source_data_dir = project_root / 'data' / 'uat_generation' / args.source
+    
+    print(f"Source directory: {source_data_dir}")
+    print(f"Incremental mode: {args.incremental}")
+    print()
+    
+    ingestion = BronzeRawAttributeIngestion(
+        source_data_dir=source_data_dir,
+        incremental=args.incremental
+    )
     ingestion.run()

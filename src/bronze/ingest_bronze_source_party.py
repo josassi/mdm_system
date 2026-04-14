@@ -7,12 +7,13 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import uuid
+import sys
 
 
 class BronzeSourcePartyIngestion:
     """Ingests source data into SOURCE_PARTY table using metadata-driven logic"""
     
-    def __init__(self, metadata_dir=None, source_data_dir=None, output_dir=None):
+    def __init__(self, metadata_dir=None, source_data_dir=None, output_dir=None, incremental=False):
         # Default to project root paths
         project_root = Path(__file__).parent.parent.parent
         self.metadata_dir = Path(metadata_dir) if metadata_dir else project_root / 'data' / 'uat_generation' / 'metadata'
@@ -24,8 +25,11 @@ class BronzeSourcePartyIngestion:
         self.metadata_system_table = None
         self.metadata_party_type = None
         self.metadata_column = None
+        self.existing_source_party = None  # For SCD2 incremental
         
+        self.incremental = incremental
         self.source_party_records = []
+        self.ingestion_timestamp = datetime.now()
         
     def load_metadata(self):
         """Load all required metadata tables"""
@@ -40,6 +44,24 @@ class BronzeSourcePartyIngestion:
         print(f"  ✓ Loaded {len(self.metadata_system_table)} tables")
         print(f"  ✓ Loaded {len(self.metadata_party_type)} party types")
         print(f"  ✓ Loaded {len(self.metadata_column)} column mappings")
+    
+    def load_existing_source_party(self):
+        """Load existing SOURCE_PARTY for SCD2 incremental processing"""
+        source_party_file = self.output_dir / 'source_party.csv'
+        
+        if source_party_file.exists():
+            self.existing_source_party = pd.read_csv(source_party_file)
+            # Convert date columns
+            if 'rec_start_date' in self.existing_source_party.columns:
+                self.existing_source_party['rec_start_date'] = pd.to_datetime(self.existing_source_party['rec_start_date'], format='ISO8601')
+            if 'rec_end_date' in self.existing_source_party.columns:
+                self.existing_source_party['rec_end_date'] = pd.to_datetime(self.existing_source_party['rec_end_date'], format='ISO8601')
+            
+            print(f"\nLoading existing SOURCE_PARTY for incremental processing...")
+            print(f"  ✓ Loaded {len(self.existing_source_party)} existing SOURCE_PARTY records")
+        else:
+            print(f"\nNo existing SOURCE_PARTY found - will create initial version")
+            self.existing_source_party = pd.DataFrame()
     
     def get_system_table_id(self, system_name, table_name):
         """Get system_table_id for a given system and table"""
@@ -217,7 +239,7 @@ class BronzeSourcePartyIngestion:
             raise ValueError(f"No primary key column found for {system_name}.{table_name}")
         
         pk_column = pk_columns[0]
-        ingestion_timestamp = datetime.now().isoformat()
+        ingestion_timestamp = self.ingestion_timestamp.isoformat()
         
         # Detect pattern
         is_column_subset = self.is_column_subset_table(system_name, table_name)
@@ -288,7 +310,8 @@ class BronzeSourcePartyIngestion:
                     'is_active': True
                 }
                 
-                self.source_party_records.append(source_party_record)
+                # Process with SCD2
+                self.process_source_party_scd2(source_party_record, system_table_id, pk_value, party_type_id)
                 parties_created += 1
         
         return parties_created
@@ -336,7 +359,8 @@ class BronzeSourcePartyIngestion:
                 'is_active': True
             }
             
-            self.source_party_records.append(source_party_record)
+            # Process with SCD2
+            self.process_source_party_scd2(source_party_record, system_table_id, pk_value, main_party_type_id)
             parties_created += 1
         
         return parties_created
@@ -369,7 +393,8 @@ class BronzeSourcePartyIngestion:
                     'is_active': True
                 }
                 
-                self.source_party_records.append(source_party_record)
+                # Process with SCD2
+                self.process_source_party_scd2(source_party_record, system_table_id, str(row[pk_column]), party_type_id)
                 parties_created += 1
                 
             except Exception as e:
@@ -378,6 +403,62 @@ class BronzeSourcePartyIngestion:
                 raise
         
         return parties_created
+    
+    def process_source_party_scd2(self, source_party_record, system_table_id, source_record_id, party_type_id):
+        """
+        Process SOURCE_PARTY with SCD2 logic (delta-based):
+        - If incremental and party exists: check if changed, close old, create new version
+        - If new: create with rec_start_date = now, rec_end_date = NULL
+        """
+        # Check if this SOURCE_PARTY already exists (current version)
+        existing_match = None
+        if self.incremental and not self.existing_source_party.empty:
+            existing_match = self.existing_source_party[
+                (self.existing_source_party['system_table_id'] == system_table_id) &
+                (self.existing_source_party['source_record_id'] == source_record_id) &
+                (self.existing_source_party['party_type_id'] == party_type_id) &
+                (self.existing_source_party['rec_end_date'].isna())
+            ]
+        
+        if existing_match is not None and not existing_match.empty:
+            # Party exists - close old version and create new
+            idx = existing_match.index[0]
+            old_is_active = existing_match.iloc[0]['is_active']
+            new_is_active = source_party_record.get('is_active', True)
+            
+            # Check if anything actually changed
+            if old_is_active == new_is_active:
+                # No change - don't create new version
+                return
+            
+            # Close old version
+            self.existing_source_party.at[idx, 'rec_end_date'] = self.ingestion_timestamp
+            
+            # Create new version with incremented ID
+            old_id = existing_match.iloc[0]['source_party_id']
+            if '_v' in old_id:
+                base_id, version = old_id.rsplit('_v', 1)
+                new_version = int(version) + 1
+                source_party_id = f"{base_id}_v{new_version}"
+            else:
+                source_party_id = f"{old_id}_v2"
+        else:
+            # New party - use the provided ID
+            source_party_id = source_party_record['source_party_id']
+        
+        # Create SOURCE_PARTY record with SCD2 columns
+        scd2_record = {
+            'source_party_id': source_party_id,
+            'system_table_id': source_party_record['system_table_id'],
+            'party_type_id': source_party_record['party_type_id'],
+            'source_record_id': source_party_record['source_record_id'],
+            'ingestion_timestamp': source_party_record['ingestion_timestamp'],
+            'is_active': source_party_record['is_active'],
+            'rec_start_date': self.ingestion_timestamp.isoformat(),
+            'rec_end_date': None
+        }
+        
+        self.source_party_records.append(scd2_record)
     
     def ingest_all_sources(self):
         """Ingest all source tables that contain party data"""
@@ -399,37 +480,80 @@ class BronzeSourcePartyIngestion:
             self.ingest_source_table(system, table, filename)
     
     def export_source_party(self):
-        """Export SOURCE_PARTY table to CSV"""
-        df = pd.DataFrame(self.source_party_records)
+        """Export SOURCE_PARTY table to CSV with SCD2 history"""
+        # Combine existing (with updates) + new records
+        if self.incremental and not self.existing_source_party.empty:
+            existing_records = self.existing_source_party.to_dict('records')
+            all_records = existing_records + self.source_party_records
+            df = pd.DataFrame(all_records)
+        else:
+            df = pd.DataFrame(self.source_party_records)
+        
         output_file = self.output_dir / 'source_party.csv'
         df.to_csv(output_file, index=False)
         
         print(f"\n{'='*70}")
-        print(f"✓ Exported SOURCE_PARTY: {len(df)} records")
+        print(f"✓ Exported SOURCE_PARTY: {len(df)} total records")
         print(f"  File: {output_file}")
         
-        # Print summary by party_type
+        # SCD2 statistics
+        if 'rec_end_date' in df.columns:
+            current_count = df['rec_end_date'].isna().sum()
+            historical_count = df['rec_end_date'].notna().sum()
+            print(f"\nSCD2 Statistics:")
+            print(f"  Current versions:    {current_count:>5}")
+            print(f"  Historical versions: {historical_count:>5}")
+            print(f"  Total records:       {len(df):>5}")
+        
+        # Print summary by party_type (current versions only)
         print(f"\nBreakdown by party_type:")
-        for party_type_id in df['party_type_id'].unique():
-            count = len(df[df['party_type_id'] == party_type_id])
+        current_df = df[df['rec_end_date'].isna()] if 'rec_end_date' in df.columns else df
+        for party_type_id in current_df['party_type_id'].unique():
+            count = len(current_df[current_df['party_type_id'] == party_type_id])
             party_type = self.metadata_party_type[
                 self.metadata_party_type['party_type_id'] == party_type_id
             ].iloc[0]['party_type']
             print(f"  {party_type:<45} {count:>3} records")
     
     def run(self):
-        """Execute full SOURCE_PARTY ingestion"""
+        """Execute SOURCE_PARTY ingestion (full or incremental)"""
         print("="*70)
-        print("BRONZE LAYER INGESTION - SOURCE_PARTY")
+        print(f"BRONZE LAYER INGESTION - SOURCE_PARTY ({'INCREMENTAL' if self.incremental else 'FULL'})")
         print("="*70)
         
         self.load_metadata()
+        
+        if self.incremental:
+            self.load_existing_source_party()
+        
         self.ingest_all_sources()
         self.export_source_party()
         
-        print("\n✓ Bronze SOURCE_PARTY ingestion complete")
+        print(f"\n✓ Bronze SOURCE_PARTY ingestion complete ({'incremental' if self.incremental else 'full'})")
 
 
 if __name__ == '__main__':
-    ingestion = BronzeSourcePartyIngestion()
+    # Parse command line arguments
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Bronze SOURCE_PARTY Ingestion')
+    parser.add_argument('--source', type=str, default='sources',
+                        help='Source directory name (e.g., sources, sources_t1, sources_t2)')
+    parser.add_argument('--incremental', action='store_true',
+                        help='Run in incremental mode (SCD2)')
+    
+    args = parser.parse_args()
+    
+    # Set source directory
+    project_root = Path(__file__).parent.parent.parent
+    source_data_dir = project_root / 'data' / 'uat_generation' / args.source
+    
+    print(f"Source directory: {source_data_dir}")
+    print(f"Incremental mode: {args.incremental}")
+    print()
+    
+    ingestion = BronzeSourcePartyIngestion(
+        source_data_dir=source_data_dir,
+        incremental=args.incremental
+    )
     ingestion.run()
