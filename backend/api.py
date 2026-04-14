@@ -400,25 +400,38 @@ def get_parties():
                     entity_party_count = len(entity_parties)
                     
                     # Calculate average match score with other parties in entity
+                    # Match score = % of attributes matching across all party pairs
                     other_party_ids = [pid for pid in entity_parties['party_id'].tolist() if pid != party_id]
                     
                     if len(other_party_ids) > 0:
                         match_scores = []
                         for other_party_id in other_party_ids:
                             # Get match evidence between this party and other party
-                            evidence = data['match_evidence'][
+                            match_evidence = data['match_evidence'][
                                 (((data['match_evidence']['party_id_1'] == party_id) & 
                                   (data['match_evidence']['party_id_2'] == other_party_id)) |
                                  ((data['match_evidence']['party_id_1'] == other_party_id) & 
                                   (data['match_evidence']['party_id_2'] == party_id)))
                             ]
                             
-                            # Calculate match score for this pair if evidence exists
-                            if len(evidence) > 0:
-                                pair_score = evidence['match_score'].mean()
+                            # Get difference evidence (mismatches) between parties
+                            diff_evidence = data['difference_evidence'][
+                                (((data['difference_evidence']['party_id_1'] == party_id) & 
+                                  (data['difference_evidence']['party_id_2'] == other_party_id)) |
+                                 ((data['difference_evidence']['party_id_1'] == other_party_id) & 
+                                  (data['difference_evidence']['party_id_2'] == party_id)))
+                            ]
+                            
+                            # Count matching and total attributes
+                            matching_attrs = len(match_evidence)
+                            total_attrs = matching_attrs + len(diff_evidence)
+                            
+                            # Calculate match percentage for this pair
+                            if total_attrs > 0:
+                                pair_score = matching_attrs / total_attrs
                                 match_scores.append(pair_score)
                         
-                        # Average of all pairwise scores
+                        # Average of all pairwise match percentages
                         if len(match_scores) > 0:
                             match_score = float(sum(match_scores) / len(match_scores))
                     else:
