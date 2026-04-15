@@ -349,7 +349,7 @@ def scd2_14_complex_object_changes():
 
 
 # ========================================================================
-# CATEGORY 3: RELATIONSHIP CHANGES (6 scenarios)
+# CATEGORY 3: RELATIONSHIP CHANGES (6 scenarios + 2 cluster scenarios)
 # ========================================================================
 
 def scd2_16_new_fk_relationship():
@@ -420,6 +420,72 @@ def scd2_18_fk_relationship_changed():
             'spouse_phone': None,
             'spouse_gov_id': None,
             'created_date': date(2024, 1, 25),
+            'source_system': 'SmartPlus'
+        }]
+    }
+
+
+def scd2_30_cluster_merge():
+    """
+    SCD2-30: Cluster Merge (2 clusters → 1)
+    
+    T0 Setup:
+      - Cluster A: Lead L301 (singleton - no quotes reference it)
+      - Cluster B: Quote Q301 (lead_id=NULL) → QuoteMembers QM301, QM302
+      - These are 2 separate clusters
+    
+    T1: Quote Q301 gets lead_id=L301
+      → Creates FK relationship Q301→L301
+      → Merges Cluster A (1 party) into Cluster B (3 parties)
+    
+    Expected:
+      - Merged cluster keeps Cluster B's ID (larger cluster = 3 parties)
+      - L301's old singleton cluster closed (rec_end_date set)
+      - New cluster assignment for L301 with Cluster B's ID
+    """
+    return {
+        'quotes': [{
+            'quote_id': 'Q301',
+            'lead_id': 'L301',  # ADDED FK (was NULL in T0) → triggers merge
+            'quote_type': 'Individual',
+            'contract_number': 'C301',
+            'total_premium': 5000.00,
+            'quote_date': date(2024, 6, 1),
+            'status': 'Accepted',
+            'created_date': date(2024, 6, 1),
+            'source_system': 'SmartPlus'
+        }]
+    }
+
+
+def scd2_31_cluster_split():
+    """
+    SCD2-31: Cluster Split (1 cluster → 2)
+    
+    T0 Setup:
+      - One cluster: Lead L401 ← Quote Q401 (lead_id=L401) and Quote Q402 (lead_id=L401)
+      - Cluster = {L401, Q401, Q402}
+    
+    T1: Quote Q402 gets lead_id=NULL (FK removed)
+      → Breaks FK relationship Q402→L401
+      → Cluster splits: {L401, Q401} and {Q402}
+    
+    Expected:
+      - {L401, Q401} keeps original cluster ID (larger child = 2 parties)
+      - {Q402} gets new cluster ID (singleton)
+      - Old cluster assignments for all 3 parties closed
+      - New assignments created
+    """
+    return {
+        'quotes': [{
+            'quote_id': 'Q402',
+            'lead_id': None,  # REMOVED FK (was L401 in T0) → triggers split
+            'quote_type': 'Individual',
+            'contract_number': 'C402',
+            'total_premium': 7000.00,
+            'quote_date': date(2024, 7, 1),
+            'status': 'Accepted',
+            'created_date': date(2024, 7, 1),
             'source_system': 'SmartPlus'
         }]
     }
@@ -532,6 +598,10 @@ def generate_t1_delta():
     data['quotes'].extend(scd2_16_new_fk_relationship()['quotes'])
     data['quotes'].extend(scd2_17_fk_relationship_broken()['quotes'])
     data['applications'].extend(scd2_18_fk_relationship_changed()['applications'])
+    
+    # Category 3b: CLUSTER changes
+    data['quotes'].extend(scd2_30_cluster_merge()['quotes'])
+    data['quotes'].extend(scd2_31_cluster_split()['quotes'])
     
     # Category 4: Edge cases
     t1_data, _ = scd2_24_rapid_successive_changes()
@@ -681,6 +751,101 @@ def generate_t0_additions_for_testing():
         'gov_id_type': 'HKID',
         'gov_id_number': 'F160000(0)',
         'created_date': date(2024, 1, 25),
+        'source_system': 'SmartPlus'
+    })
+    
+    # For SCD2-30: Cluster merge - Lead L301 (singleton) and Quote Q301 with members
+    data['leads'].append({
+        'lead_id': 'L301',
+        'first_name': 'MergeTarget',
+        'last_name': 'Person',
+        'date_of_birth': date(1990, 6, 1),
+        'email': 'merge.target@email.com',
+        'phone': '+852-9301-0001',
+        'address': 'Merge Test Address 301',
+        'gov_id_type': 'HKID',
+        'gov_id_number': 'M301000(0)',
+        'created_date': date(2024, 6, 1),
+        'source_system': 'SmartPlus'
+    })
+    data['quotes'].append({
+        'quote_id': 'Q301',
+        'lead_id': None,  # No FK initially → separate cluster from L301
+        'quote_type': 'Individual',
+        'contract_number': 'C301',
+        'total_premium': 5000.00,
+        'quote_date': date(2024, 6, 1),
+        'status': 'Accepted',
+        'created_date': date(2024, 6, 1),
+        'source_system': 'SmartPlus'
+    })
+    data['quote_members'].append({
+        'qm_id': 'QM301',
+        'quote_id': 'Q301',
+        'member_sequence': 1,
+        'first_name': 'MergeMember',
+        'last_name': 'One',
+        'date_of_birth': date(1990, 6, 1),
+        'email': 'merge.member1@email.com',
+        'phone': '+852-9301-0002',
+        'gov_id_type': 'HKID',
+        'gov_id_number': 'M301001(0)',
+        'relationship_type': 'Primary',
+        'gender': 'M',
+        'created_date': date(2024, 6, 1),
+        'source_system': 'SmartPlus'
+    })
+    data['quote_members'].append({
+        'qm_id': 'QM302',
+        'quote_id': 'Q301',
+        'member_sequence': 2,
+        'first_name': 'MergeMember',
+        'last_name': 'Two',
+        'date_of_birth': date(1992, 6, 1),
+        'email': 'merge.member2@email.com',
+        'phone': '+852-9301-0003',
+        'gov_id_type': 'HKID',
+        'gov_id_number': 'M301002(0)',
+        'relationship_type': 'Spouse',
+        'gender': 'F',
+        'created_date': date(2024, 6, 1),
+        'source_system': 'SmartPlus'
+    })
+    
+    # For SCD2-31: Cluster split - Lead L401 with 2 quotes
+    data['leads'].append({
+        'lead_id': 'L401',
+        'first_name': 'SplitSource',
+        'last_name': 'Person',
+        'date_of_birth': date(1988, 7, 1),
+        'email': 'split.source@email.com',
+        'phone': '+852-9401-0001',
+        'address': 'Split Test Address 401',
+        'gov_id_type': 'HKID',
+        'gov_id_number': 'S401000(0)',
+        'created_date': date(2024, 7, 1),
+        'source_system': 'SmartPlus'
+    })
+    data['quotes'].append({
+        'quote_id': 'Q401',
+        'lead_id': 'L401',  # FK to L401 → stays connected after split
+        'quote_type': 'Individual',
+        'contract_number': 'C401',
+        'total_premium': 6000.00,
+        'quote_date': date(2024, 7, 1),
+        'status': 'Accepted',
+        'created_date': date(2024, 7, 1),
+        'source_system': 'SmartPlus'
+    })
+    data['quotes'].append({
+        'quote_id': 'Q402',
+        'lead_id': 'L401',  # FK to L401 → will be removed in T1 to trigger split
+        'quote_type': 'Individual',
+        'contract_number': 'C402',
+        'total_premium': 7000.00,
+        'quote_date': date(2024, 7, 1),
+        'status': 'Accepted',
+        'created_date': date(2024, 7, 1),
         'source_system': 'SmartPlus'
     })
     

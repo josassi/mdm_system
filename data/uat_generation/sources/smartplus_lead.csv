@@ -3,3 +3,5 @@ L001,John,Smith,1985-06-15,john.smith@email.com,+852-9123-4567,"Flat 5A, 123 Que
 L002,Sarah,Lee,1982-03-20,sarah.lee@email.com,+852-9234-5678,"Unit 12B, 456 Nathan Road, Kowloon, HK",HKID,B234567(8),2026-01-25,SmartPlus
 L003,Susan,Martinez,1987-02-18,susan.martinez@email.com,+852-9123-4567,"Flat 8C, 789 Hennessy Road, Wan Chai, HK",HKID,L123456(7),2026-01-25,SmartPlus
 L004,Broker,Agency,,broker@agency.com,+852-9666-6666,"Office Tower, HK",,,2026-01-25,SmartPlus
+L301,MergeTarget,Person,1990-06-01,merge.target@email.com,+852-9301-0001,Merge Test Address 301,HKID,M301000(0),2024-06-01,SmartPlus
+L401,SplitSource,Person,1988-07-01,split.source@email.com,+852-9401-0001,Split Test Address 401,HKID,S401000(0),2024-07-01,SmartPlus

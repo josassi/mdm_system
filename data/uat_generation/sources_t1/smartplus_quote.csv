@@ -1,3 +1,5 @@
 quote_id,lead_id,quote_type,contract_number,total_premium,quote_date,status,created_date,source_system
 Q016,L016,Individual,C016,6000.0,2024-01-20,Accepted,2024-01-25,SmartPlus
 Q017,,Individual,C017,7000.0,2024-01-21,Accepted,2024-01-25,SmartPlus
+Q301,L301,Individual,C301,5000.0,2024-06-01,Accepted,2024-06-01,SmartPlus
+Q402,,Individual,C402,7000.0,2024-07-01,Accepted,2024-07-01,SmartPlus

@@ -52,3 +52,5 @@ QM050,Q029,1,Rachel,Wong,1992-07-15,rachel.wong@email.com,+852-9555-5555,HKID,F1
 QM051,Q030,1,Transit,Person,1990-05-15,shared@transit.com,+852-9888-0001,HKID,TX123456(7),Primary,M,2026-01-25,SmartPlus
 QM052,Q031,1,Transit,Person,1990-05-15,shared@transit.com,+852-9888-0002,,,Primary,M,2026-01-25,SmartPlus
 QM053,Q032,1,Transit,Person,1990-05-15,different@transit.com,+852-9888-0003,HKID,TY123456(7),Primary,M,2026-01-25,SmartPlus
+QM301,Q301,1,MergeMember,One,1990-06-01,merge.member1@email.com,+852-9301-0002,HKID,M301001(0),Primary,M,2024-06-01,SmartPlus
+QM302,Q301,2,MergeMember,Two,1992-06-01,merge.member2@email.com,+852-9301-0003,HKID,M301002(0),Spouse,F,2024-06-01,SmartPlus
