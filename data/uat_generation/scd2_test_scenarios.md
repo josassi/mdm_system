@@ -78,10 +78,10 @@ data/uat_generation/
 
 ## T1 Delta Summary
 
-**Total T1 delta rows:** 35
+**Total T1 delta rows:** 37
 
 - **leads:** 8 rows
-- **quotes:** 2 rows
+- **quotes:** 4 rows
 - **applications:** 3 rows
 - **policies:** 1 rows
 - **policy_members:** 21 rows
