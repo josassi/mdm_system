@@ -8,17 +8,20 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import uuid
+import sys
 
 
 class BronzeRelationshipIngestion:
     """Ingests relationships using metadata-driven discovery logic"""
     
-    def __init__(self, metadata_dir=None, source_data_dir=None, bronze_dir=None):
+    def __init__(self, metadata_dir=None, source_data_dir=None, bronze_dir=None, incremental=False, full_source_data_dir=None):
         # Default to project root paths
         project_root = Path(__file__).parent.parent.parent
         self.metadata_dir = Path(metadata_dir) if metadata_dir else project_root / 'data' / 'uat_generation' / 'metadata'
         self.source_data_dir = Path(source_data_dir) if source_data_dir else project_root / 'data' / 'uat_generation' / 'sources'
         self.bronze_dir = Path(bronze_dir) if bronze_dir else project_root / 'data' / 'bronze'
+        # Full source data dir for FK target lookups in incremental mode
+        self.full_source_data_dir = Path(full_source_data_dir) if full_source_data_dir else project_root / 'data' / 'uat_generation' / 'sources'
         
         # Metadata tables
         self.metadata_system = None
@@ -30,6 +33,16 @@ class BronzeRelationshipIngestion:
         
         # Bronze tables
         self.source_party = None
+        self.existing_relationships = None  # For SCD2 incremental
+        
+        # Incremental mode
+        self.incremental = incremental
+        self.ingestion_timestamp = datetime.now()
+        
+        # Track delta source parties (for broken relationship detection)
+        self.delta_source_parties = set()
+        # Track all verified relationship keys (new + confirmed existing)
+        self.verified_relationship_keys = set()
         
         # Output
         self.relationship_records = []
@@ -53,7 +66,7 @@ class BronzeRelationshipIngestion:
         print(f"  ✓ Loaded {len(self.metadata_column)} column mappings")
     
     def load_source_party(self):
-        """Load SOURCE_PARTY table"""
+        """Load SOURCE_PARTY table (current versions only for relationship discovery)"""
         print("\nLoading SOURCE_PARTY...")
         source_party_file = self.bronze_dir / 'source_party.csv'
         
@@ -63,8 +76,36 @@ class BronzeRelationshipIngestion:
                 "Please run ingest_bronze_source_party.py first."
             )
         
-        self.source_party = pd.read_csv(source_party_file)
-        print(f"  ✓ Loaded {len(self.source_party)} SOURCE_PARTY records")
+        all_source_party = pd.read_csv(source_party_file)
+        # Filter to current versions only (rec_end_date is NULL)
+        if 'rec_end_date' in all_source_party.columns:
+            self.source_party = all_source_party[all_source_party['rec_end_date'].isna()].copy()
+            print(f"  ✓ Loaded {len(self.source_party)} current SOURCE_PARTY records (of {len(all_source_party)} total)")
+        else:
+            self.source_party = all_source_party
+            print(f"  ✓ Loaded {len(self.source_party)} SOURCE_PARTY records")
+    
+    def load_existing_relationships(self):
+        """Load existing RELATIONSHIP records for SCD2 incremental processing"""
+        rel_file = self.bronze_dir / 'relationship.csv'
+        
+        if rel_file.exists():
+            self.existing_relationships = pd.read_csv(rel_file)
+            # Convert date columns
+            if 'rec_start_date' in self.existing_relationships.columns:
+                self.existing_relationships['rec_start_date'] = pd.to_datetime(
+                    self.existing_relationships['rec_start_date'], format='ISO8601')
+            if 'rec_end_date' in self.existing_relationships.columns:
+                self.existing_relationships['rec_end_date'] = pd.to_datetime(
+                    self.existing_relationships['rec_end_date'], format='ISO8601')
+            
+            current_count = self.existing_relationships['rec_end_date'].isna().sum()
+            historical_count = self.existing_relationships['rec_end_date'].notna().sum()
+            print(f"\nLoading existing RELATIONSHIP for incremental processing...")
+            print(f"  ✓ Loaded {len(self.existing_relationships)} existing records ({current_count} current, {historical_count} historical)")
+        else:
+            print(f"\nNo existing RELATIONSHIP found - will create initial version")
+            self.existing_relationships = pd.DataFrame()
     
     def get_system_table_info(self, system_table_id):
         """Get system name and table name from system_table_id"""
@@ -119,16 +160,22 @@ class BronzeRelationshipIngestion:
             
             print(f"\nProcessing: {from_system}.{from_table}.{from_column} → {to_system}.{to_table}.{to_column}")
             
-            # Load source table
+            # Load source table (from delta in incremental mode)
             from_file = self.source_data_dir / f"{from_system.lower()}_{from_table}.csv"
             if not from_file.exists():
+                if self.incremental:
+                    # No delta for this source table - skip
+                    continue
                 print(f"  ⚠ Source file not found: {from_file}")
                 continue
             
             from_df = pd.read_csv(from_file)
             
-            # Load target table
-            to_file = self.source_data_dir / f"{to_system.lower()}_{to_table}.csv"
+            # Load target table (always use full sources in incremental mode)
+            if self.incremental:
+                to_file = self.full_source_data_dir / f"{to_system.lower()}_{to_table}.csv"
+            else:
+                to_file = self.source_data_dir / f"{to_system.lower()}_{to_table}.csv"
             if not to_file.exists():
                 print(f"  ⚠ Target file not found: {to_file}")
                 continue
@@ -139,8 +186,12 @@ class BronzeRelationshipIngestion:
             from_pk = self._get_primary_key(from_system, from_table)
             to_pk = self._get_primary_key(to_system, to_table)
             
-            ingestion_timestamp = datetime.now().isoformat()
+            ingestion_timestamp = self.ingestion_timestamp.isoformat()
             relationships_found = 0
+            
+            # Track delta source parties for broken relationship detection
+            if self.incremental:
+                self.track_delta_source_parties(from_system, from_table, from_df, from_pk)
             
             # Get main_party_type_id for from and to tables
             # NULL is valid for conditional tables (one party per row)
@@ -221,8 +272,8 @@ class BronzeRelationshipIngestion:
                             'rec_end_date': None
                         }
                         
-                        self.relationship_records.append(relationship_record)
-                        relationships_found += 1
+                        if self.process_relationship_scd2(relationship_record):
+                            relationships_found += 1
             else:
                 # Simple single-column FK matching
                 for _, from_row in from_df.iterrows():
@@ -272,8 +323,8 @@ class BronzeRelationshipIngestion:
                             'rec_end_date': None
                         }
                         
-                        self.relationship_records.append(relationship_record)
-                        relationships_found += 1
+                        if self.process_relationship_scd2(relationship_record):
+                            relationships_found += 1
             
             print(f"  ✓ Created {relationships_found} relationships")
     
@@ -292,7 +343,7 @@ class BronzeRelationshipIngestion:
         print("INGESTING SAME-ROW SEMANTIC RELATIONSHIPS")
         print("="*70)
         
-        ingestion_timestamp = datetime.now().isoformat()
+        ingestion_timestamp = self.ingestion_timestamp.isoformat()
         
         for idx, rel_meta in self.metadata_party_type_relationship.iterrows():
             print(f"\nProcessing: {rel_meta['from_party_type']} → {rel_meta['to_party_type']}")
@@ -355,8 +406,8 @@ class BronzeRelationshipIngestion:
                         'rec_end_date': None
                     }
                     
-                    self.relationship_records.append(relationship_record)
-                    relationships_found += 1
+                    if self.process_relationship_scd2(relationship_record):
+                        relationships_found += 1
                     
                     # Handle bidirectional relationships
                     if rel_meta['is_bidirectional']:
@@ -365,8 +416,8 @@ class BronzeRelationshipIngestion:
                         reverse_record['party_relationship_id'] = reverse_relationship_id
                         reverse_record['from_party_id'] = to_party_id
                         reverse_record['to_party_id'] = from_party_id
-                        self.relationship_records.append(reverse_record)
-                        relationships_found += 1
+                        if self.process_relationship_scd2(reverse_record):
+                            relationships_found += 1
             
             print(f"  ✓ Created {relationships_found} relationships")
     
@@ -399,12 +450,17 @@ class BronzeRelationshipIngestion:
         
         bridge_table_name = bridge_system_table.iloc[0]['table_name']
         
-        # Load bridge table
+        # Load bridge table (fallback to full sources in incremental mode)
         bridge_file = self.source_data_dir / f"{from_system.lower()}_{bridge_table_name}.csv"
         
         if not bridge_file.exists():
-            print(f"    ⚠ Bridge table file not found: {bridge_file}")
-            return 0
+            if self.incremental:
+                bridge_file = self.full_source_data_dir / f"{from_system.lower()}_{bridge_table_name}.csv"
+            if not bridge_file.exists():
+                if self.incremental:
+                    return 0  # No delta for bridge table
+                print(f"    ⚠ Bridge table file not found: {bridge_file}")
+                return 0
         
         bridge_df = pd.read_csv(bridge_file)
         print(f"    → Bridge table '{bridge_table_name}': {len(bridge_df)} rows")
@@ -470,10 +526,86 @@ class BronzeRelationshipIngestion:
                 'rec_end_date': None
             }
             
-            self.relationship_records.append(relationship_record)
-            relationships_found += 1
+            if self.process_relationship_scd2(relationship_record):
+                relationships_found += 1
         
         return relationships_found
+    
+    def process_relationship_scd2(self, relationship_record):
+        """
+        Process relationship with immutable SCD2 logic:
+        - If relationship already exists (current version): mark as verified, skip
+        - If new relationship: create with rec_start_date=now, rec_end_date=NULL
+        """
+        from_party = relationship_record['from_party_id']
+        to_party = relationship_record['to_party_id']
+        rel_key = (from_party, to_party)
+        
+        # Always track as verified (whether new or existing)
+        self.verified_relationship_keys.add(rel_key)
+        
+        # In incremental mode, check if this relationship already exists
+        if self.incremental and not self.existing_relationships.empty:
+            existing = self.existing_relationships[
+                (self.existing_relationships['from_party_id'] == from_party) &
+                (self.existing_relationships['to_party_id'] == to_party) &
+                (self.existing_relationships['rec_end_date'].isna())
+            ]
+            
+            if not existing.empty:
+                # Relationship already exists - skip
+                return False
+        
+        # Create new relationship record
+        self.relationship_records.append(relationship_record)
+        return True
+    
+    def track_delta_source_parties(self, from_system, from_table, from_df, from_pk):
+        """
+        Track which SOURCE_PARTY records appear in delta source files.
+        Called when a delta source file is read during FK-based relationship discovery.
+        """
+        for _, row in from_df.iterrows():
+            pk_value = str(row[from_pk])
+            party_id = self._find_source_party(from_system, from_table, pk_value)
+            if party_id:
+                self.delta_source_parties.add(party_id)
+    
+    def close_broken_relationships(self):
+        """
+        Close relationships that are broken by delta changes.
+        
+        Logic: For each SOURCE_PARTY that appeared in the delta,
+        check if any of its existing current relationships were NOT verified
+        (neither re-discovered nor confirmed as still existing).
+        Those relationships are broken (FK changed or removed).
+        """
+        if not self.incremental or self.existing_relationships.empty:
+            return
+        
+        # Check existing current relationships involving delta parties
+        closed_count = 0
+        current_rels = self.existing_relationships[
+            self.existing_relationships['rec_end_date'].isna()
+        ]
+        
+        for _, rel in current_rels.iterrows():
+            from_party = rel['from_party_id']
+            to_party = rel['to_party_id']
+            
+            # Only check relationships where FROM party is in delta
+            # (from_party is the one with the FK that may have changed)
+            if from_party not in self.delta_source_parties:
+                continue
+            
+            # If this relationship was not verified (new or confirmed existing), it's broken
+            if (from_party, to_party) not in self.verified_relationship_keys:
+                idx = rel.name  # DataFrame index
+                self.existing_relationships.at[idx, 'rec_end_date'] = self.ingestion_timestamp
+                closed_count += 1
+        
+        if closed_count > 0:
+            print(f"\n  ✓ Closed {closed_count} broken relationships (FK changed/removed)")
     
     def _get_primary_key(self, system_name, table_name):
         """Get primary key column name for a table"""
@@ -626,41 +758,87 @@ class BronzeRelationshipIngestion:
         return result
     
     def export_relationship(self):
-        """Export RELATIONSHIP table to CSV"""
-        df = pd.DataFrame(self.relationship_records)
+        """Export RELATIONSHIP table to CSV with SCD2 history"""
+        # Combine existing (with updates) + new records
+        if self.incremental and self.existing_relationships is not None and not self.existing_relationships.empty:
+            existing_records = self.existing_relationships.to_dict('records')
+            all_records = existing_records + self.relationship_records
+            df = pd.DataFrame(all_records)
+        else:
+            df = pd.DataFrame(self.relationship_records)
+        
         output_file = self.bronze_dir / 'relationship.csv'
         df.to_csv(output_file, index=False)
         
         print(f"\n{'='*70}")
-        print(f"✓ Exported RELATIONSHIP: {len(df)} records")
+        print(f"✓ Exported RELATIONSHIP: {len(df)} total records")
         print(f"  File: {output_file}")
         
         if len(df) > 0:
-            # Print summary by type
-            fk_count = len(df[df['metadata_relationship_id'].notna()])
-            semantic_count = len(df[df['metadata_party_type_relationship_id'].notna()])
+            # SCD2 statistics
+            if 'rec_end_date' in df.columns:
+                current_count = df['rec_end_date'].isna().sum()
+                historical_count = df['rec_end_date'].notna().sum()
+                print(f"\nSCD2 Statistics:")
+                print(f"  Current relationships:    {current_count:>5}")
+                print(f"  Historical relationships: {historical_count:>5}")
+                print(f"  Total records:            {len(df):>5}")
             
-            print(f"\nBreakdown by relationship type:")
+            # Print summary by type (current only)
+            current_df = df[df['rec_end_date'].isna()] if 'rec_end_date' in df.columns else df
+            fk_count = len(current_df[current_df['metadata_relationship_id'].notna()])
+            semantic_count = len(current_df[current_df['metadata_party_type_relationship_id'].notna()])
+            
+            print(f"\nCurrent relationships by type:")
             print(f"  FK-based relationships:       {fk_count:>3}")
             print(f"  Semantic relationships:       {semantic_count:>3}")
         else:
             print("\n⚠ No relationships created - check source data and metadata")
     
     def run(self):
-        """Execute full RELATIONSHIP ingestion"""
+        """Execute RELATIONSHIP ingestion (full or incremental)"""
         print("="*70)
-        print("BRONZE LAYER INGESTION - RELATIONSHIP")
+        print(f"BRONZE LAYER INGESTION - RELATIONSHIP ({'INCREMENTAL' if self.incremental else 'FULL'})")
         print("="*70)
         
         self.load_metadata()
         self.load_source_party()
+        
+        if self.incremental:
+            self.load_existing_relationships()
+        
         self.ingest_fk_based_relationships()
         self.ingest_semantic_relationships()
+        
+        if self.incremental:
+            self.close_broken_relationships()
+        
         self.export_relationship()
         
-        print("\n✓ Bronze RELATIONSHIP ingestion complete")
+        print(f"\n✓ Bronze RELATIONSHIP ingestion complete ({'incremental' if self.incremental else 'full'})")
 
 
 if __name__ == '__main__':
-    ingestion = BronzeRelationshipIngestion()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Bronze RELATIONSHIP Ingestion')
+    parser.add_argument('--source', type=str, default='sources',
+                        help='Source directory name (e.g., sources, sources_t1, sources_t2)')
+    parser.add_argument('--incremental', action='store_true',
+                        help='Run in incremental mode (SCD2)')
+    
+    args = parser.parse_args()
+    
+    # Set source directory
+    project_root = Path(__file__).parent.parent.parent
+    source_data_dir = project_root / 'data' / 'uat_generation' / args.source
+    
+    print(f"Source directory: {source_data_dir}")
+    print(f"Incremental mode: {args.incremental}")
+    print()
+    
+    ingestion = BronzeRelationshipIngestion(
+        source_data_dir=source_data_dir,
+        incremental=args.incremental
+    )
     ingestion.run()
